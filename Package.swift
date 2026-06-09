@@ -16,7 +16,8 @@ let package = Package(
             "LayerEngine", "CanvasEngine", "AssetEngine", "LayoutEngine",
             "ConstraintEngine", "ValidationEngine", "GitEngine",
             "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
-            "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine", "WorkspaceEngine"
+            "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine", "WorkspaceEngine",
+            "BuildIntelligenceEngine"
         ])
     ],
     dependencies: [
@@ -64,6 +65,9 @@ let package = Package(
         // Repo/workspace safety: resolve the right repo/app/target before writes.
         .target(name: "WorkspaceEngine", dependencies: ["VUACore", "GitEngine"]),
 
+        // Build intelligence: toolchain/package diagnostics + failure explanation.
+        .target(name: "BuildIntelligenceEngine", dependencies: ["VUACore"]),
+
         // Export Integrity Pipeline: portable, target-buildable SwiftUI export.
         .target(
             name: "ExportIntegrityEngine",
@@ -85,7 +89,7 @@ let package = Package(
                 "LayoutEngine", "ConstraintEngine", "ValidationEngine",
                 "GitEngine", "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
                 "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
-                "WorkspaceEngine"
+                "WorkspaceEngine", "BuildIntelligenceEngine"
             ]
         ),
 
@@ -96,7 +100,7 @@ let package = Package(
                 "VUACore", "LayerEngine", "CodeGenEngine", "ValidationEngine",
                 "ConstraintEngine", "LayoutEngine", "PreviewEngine", "AIEngine", "RepositoryEngine",
                 "AssetEngine", "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
-                "CanvasEngine", "WorkspaceEngine"
+                "CanvasEngine", "WorkspaceEngine", "BuildIntelligenceEngine"
             ]
         ),
 

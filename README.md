@@ -100,7 +100,21 @@ system keeps design and production-quality code in sync.
   Diagnostics** panel (toolbar) shows the active repo/branch/dirty badges and
   every detected warning.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 154 checks).
+- **Phase 11 — Build intelligence (done):** new **`BuildIntelligenceEngine`**.
+  Models the build lifecycle (Workspace Resolve → Package Resolve → Swift Build
+  → Verify → Export Build → App Bundle → Artifact) and build kinds
+  (dev/debug/release/CI/staging/production/export-validation); probes the
+  **toolchain** (Swift version, CLT-only vs full Xcode); inspects packages
+  (missing `Package.swift`, missing/**stale `Package.resolved`**, cold `.build`
+  cache); scans generated source for **imports that won't resolve**, a
+  VUAControls dependency that isn't bundled, and `#Preview` on CLT-only
+  machines; formats the **exact repeatable build command**; and translates raw
+  build failures into **plain-English explanations** (no-such-module, manifest
+  parse, fetch failures, linker errors, name collisions…). A **Build
+  Diagnostics** panel (toolbar ▸ hammer) shows context, pipeline, command, and
+  diagnostics.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 170 checks).
 
 ## Requirements
 
@@ -151,6 +165,7 @@ target depending only on the shared domain layer (`VUACore`).
 | `ExportIntegrityEngine` | Portable SwiftPM export: image-reference scanner (SwiftSyntax), asset copy + manifest, VUAControls source export, AU parameter manifest, diagnostics, report. |
 | `PersistenceEngine` | `.vuaproj` bundle I/O, recent documents, **version snapshots**, **autosave/crash recovery** (with newer/older conflict classification), open-document registry, corrupted-doc diagnostics. |
 | `WorkspaceEngine` | Repo/workspace safety: `WorkspaceResolver` → `WorkspaceContext` (repo root, branch, commit, dirty state, package inventory, confidence score) + wrong-repo/nested-repo/stale-scan/export-folder diagnostics, refreshed before every apply. |
+| `BuildIntelligenceEngine` | Build lifecycle model, toolchain/package/lockfile diagnostics, repeatable command formatting, generated-import scanning, plain-English build-failure explanations. |
 | `PresetEngine` | Reusable, insertable layout presets (app screens, panels, cards, dashboards, forms, plugin blocks). |
 | `VisualUIArchitect` | SwiftUI app (MVVM): canvas, layer panel, repository browser, inspector, validation, toolbar. |
 

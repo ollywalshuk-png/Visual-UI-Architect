@@ -17,6 +17,7 @@ import PersistenceEngine
 import PresetEngine
 import CanvasEngine
 import WorkspaceEngine
+import BuildIntelligenceEngine
 
 // A dependency-free assertion harness so the engines can be verified with
 // `swift run VUACheck` on a machine that has no Xcode (no XCTest).
@@ -773,6 +774,69 @@ func runChecks() async {
     } catch {
         FileHandle.standardError.write(Data("p10 exception: \(error)\n".utf8))
         c.check("p10 exception", false)
+    }
+
+    // MARK: Phase 11 — build intelligence
+    do {
+        let inspector = BuildInspector()
+
+        // Build command formatting.
+        c.check("build command debug", BuildInspector.buildCommand(kind: .debug) == ["swift", "build", "-c", "debug"])
+        c.check("build command release product",
+                BuildInspector.buildCommand(kind: .release, product: "App") == ["swift", "build", "-c", "release", "--product", "App"])
+        c.check("build kind config mapping", BuildKind.production.configuration == "release" && BuildKind.ci.configuration == "debug")
+
+        // Pipeline model: canonical order + stage updates.
+        var pipe = BuildPipeline()
+        c.check("pipeline order", pipe.entries.first?.stage == .workspaceResolve && pipe.entries.last?.stage == .artifact)
+        pipe.set(.swiftBuild, .failed, note: "boom")
+        c.check("pipeline failure tracking", pipe.failed && pipe.entries.first(where: { $0.stage == .swiftBuild })?.note == "boom")
+
+        // Toolchain probe: must produce a Swift version on any machine that can run this harness.
+        let tc = inspector.detectToolchain()
+        c.check("toolchain swift version", tc.swiftVersion?.isEmpty == false)
+
+        // Context on a folder without Package.swift → blocking diagnostic.
+        let empty = fm.temporaryDirectory.appendingPathComponent("nopkg-\(UUID().uuidString)")
+        try fm.createDirectory(at: empty, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: empty) }
+        let noPkg = inspector.makeContext(root: empty, toolchain: tc)
+        c.check("missing manifest diagnostic",
+                noPkg.diagnostics.contains { $0.code == .missingPackageManifest && $0.severity == .error } && noPkg.hasBlockingIssue)
+
+        // Package.resolved missing → info diagnostic; stale → warning.
+        let pkgDir = fm.temporaryDirectory.appendingPathComponent("pkg-\(UUID().uuidString)")
+        try fm.createDirectory(at: pkgDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: pkgDir) }
+        try "// swift-tools-version: 6.0".data(using: .utf8)!.write(to: pkgDir.appendingPathComponent("Package.swift"))
+        c.check("resolved missing diagnostic",
+                inspector.makeContext(root: pkgDir, toolchain: tc).diagnostics.contains { $0.code == .packageResolvedMissing })
+        try "{}".data(using: .utf8)!.write(to: pkgDir.appendingPathComponent("Package.resolved"))
+        try fm.setAttributes([.modificationDate: Date().addingTimeInterval(-3600)],
+                             ofItemAtPath: pkgDir.appendingPathComponent("Package.resolved").path)
+        c.check("resolved stale diagnostic",
+                inspector.makeContext(root: pkgDir, toolchain: tc).diagnostics.contains { $0.code == .packageResolvedStale })
+
+        // Generated-source scanning.
+        let clt = ToolchainInfo(swiftVersionLine: "Swift version 6.0", developerDir: "/Library/Developer/CommandLineTools", hasFullXcode: false)
+        let badImport = inspector.scanGeneratedSource("import SwiftUI\nimport MysteryKit\n", knownModules: [], bundlesVUAControls: true, toolchain: clt)
+        c.check("invalid generated import", badImport.contains { $0.code == .invalidGeneratedImport })
+        let noControls = inspector.scanGeneratedSource("import VUAControls\n", knownModules: [], bundlesVUAControls: false, toolchain: clt)
+        c.check("missing VUAControls diagnostic", noControls.contains { $0.code == .missingVUAControls && $0.severity == .error })
+        let bundled = inspector.scanGeneratedSource("import VUAControls\n", knownModules: [], bundlesVUAControls: true, toolchain: clt)
+        c.check("bundled VUAControls clean", !bundled.contains { $0.code == .missingVUAControls })
+        let preview = inspector.scanGeneratedSource("#Preview { Text(\"hi\") }", knownModules: [], bundlesVUAControls: true, toolchain: clt)
+        c.check("CLT #Preview diagnostic", preview.contains { $0.code == .previewMacroCLTIncompatible })
+
+        // Failure explanations.
+        c.check("explain no such module",
+                BuildInspector.explainFailure("error: no such module 'VUAControls'")?.contains("VUAControls") == true)
+        c.check("explain manifest error",
+                BuildInspector.explainFailure("error: the manifest is invalid")?.lowercased().contains("package.swift") == true)
+        c.check("explain unknown returns nil", BuildInspector.explainFailure("everything is fine") == nil)
+    } catch {
+        FileHandle.standardError.write(Data("p11 exception: \(error)\n".utf8))
+        c.check("p11 exception", false)
     }
 
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")

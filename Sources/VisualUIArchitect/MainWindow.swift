@@ -12,6 +12,7 @@ struct MainWindow: View {
     @State private var showExport = false
     @State private var showSnapshots = false
     @State private var showWorkspace = false
+    @State private var showBuild = false
     @State private var showRecovery = false
     @State private var recovered: PersistenceEngine.RecoveryStore.Recovered?
     @State private var sidebarTab = SidebarTab.layers
@@ -55,6 +56,7 @@ struct MainWindow: View {
         .sheet(isPresented: $showExport) { ExportPanelView().environmentObject(store) }
         .sheet(isPresented: $showSnapshots) { SnapshotsView().environmentObject(store) }
         .sheet(isPresented: $showWorkspace) { WorkspaceDiagnosticsView().environmentObject(store) }
+        .sheet(isPresented: $showBuild) { BuildDiagnosticsView().environmentObject(store) }
         .onAppear {
             if let r = store.pendingRecovery() { recovered = r; showRecovery = true }
         }
@@ -142,6 +144,10 @@ struct MainWindow: View {
 
             Button { showWorkspace = true } label: { Label("Workspace", systemImage: "checkmark.shield") }
                 .help("Workspace safety diagnostics")
+                .disabled(store.repositoryRoot == nil)
+
+            Button { showBuild = true } label: { Label("Build", systemImage: "hammer") }
+                .help("Build diagnostics: toolchain, pipeline, repeatable command, failure explanations")
                 .disabled(store.repositoryRoot == nil)
 
             Menu {

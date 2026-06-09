@@ -8,6 +8,7 @@ import PreviewEngine
 import AIEngine
 import RepositoryEngine
 import WorkspaceEngine
+import BuildIntelligenceEngine
 
 /// The single observable source of truth for the editor (MVVM view model).
 /// Holds the document, selection, undo/redo history, and derived state.
@@ -28,6 +29,8 @@ final class DocumentStore: ObservableObject {
     var autosaveTimer: Timer?
     /// Most recent workspace-safety resolution (see DocumentStore+Workspace.swift).
     @Published var workspaceContext: WorkspaceContext?
+    /// Most recent build-intelligence resolution (see DocumentStore+Build.swift).
+    @Published var buildContext: BuildContext?
 
     // Persistence state (see DocumentStore+Persistence.swift).
     /// The .vuaproj bundle URL backing the current document, if saved.
