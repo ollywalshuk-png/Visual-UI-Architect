@@ -1,0 +1,397 @@
+import SwiftUI
+import VUACore
+
+/// Inspector for the selected layer: identity, geometry, and style. Edits flow
+/// through the store so they participate in undo/redo and validation.
+struct InspectorView: View {
+    @EnvironmentObject var store: DocumentStore
+
+    var body: some View {
+        if let layer = store.canSelectSingle {
+            Form {
+                Section("Identity") {
+                    LabeledContent("Name") {
+                        TextField("Name", text: nameBinding(layer))
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    LabeledContent("Kind") { Text(layer.kind.displayName).foregroundStyle(.secondary) }
+                    if isTextBearing(layer.kind) {
+                        LabeledContent("Text") {
+                            TextField("Text", text: textBinding(layer))
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
+                }
+
+                Section("Geometry") {
+                    numberRow("X", \.frame.origin.x, layer)
+                    numberRow("Y", \.frame.origin.y, layer)
+                    numberRow("Width", \.frame.size.width, layer)
+                    numberRow("Height", \.frame.size.height, layer)
+                }
+
+                Section("Appearance") {
+                    colorRow("Background", background(layer))
+                    colorRow("Foreground", foreground(layer))
+                    numberRow("Corner Radius", \.style.cornerRadius, layer)
+                    sliderRow("Opacity", \.style.opacity, layer, range: 0...1)
+                }
+
+                effectsSection(layer)
+
+                if layer.kind == .gradient || layer.style.gradient != nil {
+                    gradientSection(layer)
+                }
+
+                organisationSection(layer)
+
+                constraintsSection(layer)
+
+                if layer.kind.isPluginControl {
+                    controlSection(layer)
+                }
+
+                if layer.kind == .image || layer.kind == .background {
+                    assetSection(layer)
+                }
+            }
+            .formStyle(.grouped)
+        } else if store.selection.count > 1 {
+            VStack(spacing: 12) {
+                Image(systemName: "square.stack.3d.up").font(.largeTitle).foregroundStyle(.secondary)
+                Text("\(store.selection.count) layers selected")
+                AlignmentControls()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding()
+        } else {
+            ContentUnavailableViewCompat(
+                title: "No Selection",
+                systemImage: "cursorarrow.rays",
+                description: "Select a layer to edit its properties.")
+        }
+    }
+
+    // MARK: - Bindings
+
+    private func nameBinding(_ layer: Layer) -> Binding<String> {
+        Binding(get: { layer.name }, set: { v in store.updateSelectedLayer { $0.name = v } })
+    }
+
+    private func textBinding(_ layer: Layer) -> Binding<String> {
+        Binding(get: { layer.text ?? "" }, set: { v in store.updateSelectedLayer { $0.text = v } })
+    }
+
+    private func numberRow(_ title: String, _ keyPath: WritableKeyPath<Layer, Double>, _ layer: Layer) -> some View {
+        LabeledContent(title) {
+            TextField(title, value: Binding(
+                get: { layer[keyPath: keyPath] },
+                set: { v in store.updateSelectedLayer { $0[keyPath: keyPath] = v } }
+            ), format: .number.precision(.fractionLength(0...1)))
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 90)
+        }
+    }
+
+    private func sliderRow(_ title: String, _ keyPath: WritableKeyPath<Layer, Double>, _ layer: Layer, range: ClosedRange<Double>) -> some View {
+        LabeledContent(title) {
+            Slider(value: Binding(
+                get: { layer[keyPath: keyPath] },
+                set: { v in store.updateSelectedLayer { $0[keyPath: keyPath] = v } }
+            ), in: range)
+            .frame(width: 120)
+        }
+    }
+
+    private func background(_ layer: Layer) -> Binding<Color> {
+        Binding(
+            get: { layer.style.backgroundColor?.swiftUI ?? .clear },
+            set: { v in store.updateSelectedLayer { $0.style.backgroundColor = v.vColor } })
+    }
+
+    private func foreground(_ layer: Layer) -> Binding<Color> {
+        Binding(
+            get: { layer.style.foregroundColor?.swiftUI ?? .primary },
+            set: { v in store.updateSelectedLayer { $0.style.foregroundColor = v.vColor } })
+    }
+
+    private func colorRow(_ title: String, _ binding: Binding<Color>) -> some View {
+        LabeledContent(title) { ColorPicker("", selection: binding, supportsOpacity: true).labelsHidden() }
+    }
+
+    private func isTextBearing(_ kind: LayerKind) -> Bool {
+        switch kind { case .label, .text, .button, .toggle: return true; default: return false }
+    }
+
+    // MARK: - AU parameter (plugin control) section
+
+    @ViewBuilder
+    private func controlSection(_ layer: Layer) -> some View {
+        let c = layer.control ?? ControlMetadata(parameterID: layer.name.lowercased())
+        Section("AU Parameter") {
+            LabeledContent("Param ID") {
+                TextField("id", text: Binding(
+                    get: { c.parameterID },
+                    set: { v in store.updateSelectedControl { $0.parameterID = v } }))
+                .textFieldStyle(.roundedBorder)
+            }
+            LabeledContent("Display") {
+                TextField("name", text: Binding(
+                    get: { c.displayName },
+                    set: { v in store.updateSelectedControl { $0.displayName = v } }))
+                .textFieldStyle(.roundedBorder)
+            }
+            LabeledContent("Min") {
+                TextField("Min", value: Binding(
+                    get: { c.minValue },
+                    set: { v in store.updateSelectedControl { $0.minValue = v } }),
+                    format: .number.precision(.fractionLength(0...2)))
+                .textFieldStyle(.roundedBorder).frame(width: 90)
+            }
+            LabeledContent("Max") {
+                TextField("Max", value: Binding(
+                    get: { c.maxValue },
+                    set: { v in store.updateSelectedControl { $0.maxValue = v } }),
+                    format: .number.precision(.fractionLength(0...2)))
+                .textFieldStyle(.roundedBorder).frame(width: 90)
+            }
+            LabeledContent("Default") {
+                TextField("Default", value: Binding(
+                    get: { c.defaultValue },
+                    set: { v in store.updateSelectedControl { $0.defaultValue = $0.clamp(v) } }),
+                    format: .number.precision(.fractionLength(0...2)))
+                .textFieldStyle(.roundedBorder).frame(width: 90)
+            }
+            LabeledContent("Unit") {
+                Picker("", selection: Binding(
+                    get: { c.unit },
+                    set: { v in store.updateSelectedControl { $0.unit = v } })) {
+                    ForEach(ControlUnit.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .labelsHidden()
+            }
+            Toggle("Continuous", isOn: Binding(
+                get: { c.isContinuous },
+                set: { v in store.updateSelectedControl { $0.isContinuous = v } }))
+            if !c.isContinuous {
+                LabeledContent("Steps") {
+                    TextField("steps", value: Binding(
+                        get: { c.stepCount ?? 2 },
+                        set: { v in store.updateSelectedControl { $0.stepCount = v } }), format: .number)
+                    .textFieldStyle(.roundedBorder).frame(width: 60)
+                }
+            }
+        }
+    }
+
+    // MARK: - Effects section (rotation / shadow / blur)
+
+    @ViewBuilder
+    private func effectsSection(_ layer: Layer) -> some View {
+        Section("Effects") {
+            LabeledContent("Rotation°") {
+                TextField("0", value: Binding(
+                    get: { layer.style.rotationDegrees },
+                    set: { v in store.updateSelectedStyle { $0.rotationDegrees = v } }),
+                    format: .number.precision(.fractionLength(0...1)))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+            LabeledContent("Blur") {
+                Slider(value: Binding(
+                    get: { layer.style.blurRadius },
+                    set: { v in store.updateSelectedStyle { $0.blurRadius = v } }), in: 0...40)
+                .frame(width: 130)
+            }
+            Toggle("Drop Shadow", isOn: Binding(
+                get: { layer.style.shadow != nil },
+                set: { on in store.updateSelectedStyle { $0.shadow = on ? ShadowSpec() : nil } }))
+            if let stroke = layer.style.borderColor {
+                LabeledContent("Stroke") {
+                    ColorPicker("", selection: Binding(
+                        get: { stroke.swiftUI },
+                        set: { v in store.updateSelectedStyle { $0.borderColor = v.vColor } }), supportsOpacity: true)
+                    .labelsHidden()
+                }
+            }
+            LabeledContent("Stroke Width") {
+                TextField("0", value: Binding(
+                    get: { layer.style.borderWidth },
+                    set: { v in store.updateSelectedStyle { $0.borderWidth = v; if $0.borderColor == nil && v > 0 { $0.borderColor = .white } } }),
+                    format: .number.precision(.fractionLength(0...1)))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+        }
+    }
+
+    // MARK: - Gradient section
+
+    @ViewBuilder
+    private func gradientSection(_ layer: Layer) -> some View {
+        let g = layer.style.gradient ?? GradientSpec()
+        Section("Gradient") {
+            LabeledContent("Type") {
+                Picker("", selection: Binding(
+                    get: { g.kind },
+                    set: { v in store.updateSelectedStyle { $0.gradient = GradientSpec(kind: v, stops: g.stops, startPoint: g.startPoint, endPoint: g.endPoint) } })) {
+                    ForEach(GradientSpec.Kind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }.labelsHidden()
+            }
+            ForEach(Array(g.stops.enumerated()), id: \.offset) { idx, stop in
+                LabeledContent("Stop \(idx + 1)") {
+                    ColorPicker("", selection: Binding(
+                        get: { stop.color.swiftUI },
+                        set: { v in
+                            var stops = g.stops
+                            stops[idx] = GradientStop(color: v.vColor, location: stop.location)
+                            store.updateSelectedStyle { $0.gradient = GradientSpec(kind: g.kind, stops: stops, startPoint: g.startPoint, endPoint: g.endPoint) }
+                        }), supportsOpacity: true).labelsHidden()
+                }
+            }
+        }
+    }
+
+    // MARK: - Organisation (role / notes / tags)
+
+    @ViewBuilder
+    private func organisationSection(_ layer: Layer) -> some View {
+        Section("Organisation") {
+            LabeledContent("Role") {
+                Picker("", selection: Binding(
+                    get: { layer.role },
+                    set: { store.setSelectedRole($0) })) {
+                    Text("None").tag(LayerRole?.none)
+                    ForEach(LayerRole.allCases, id: \.self) { Text($0.displayName).tag(LayerRole?.some($0)) }
+                }.labelsHidden()
+            }
+            Toggle("Accessibility Hidden", isOn: Binding(
+                get: { layer.isAccessibilityHidden },
+                set: { v in store.updateSelectedLayer { $0.isAccessibilityHidden = v } }))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Notes").font(.caption).foregroundStyle(.secondary)
+                TextField("Notes", text: Binding(
+                    get: { layer.notes ?? "" },
+                    set: { store.setSelectedNotes($0) }), axis: .vertical)
+                .lineLimit(1...4).textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+
+    // MARK: - Constraints section
+
+    @ViewBuilder
+    private func constraintsSection(_ layer: Layer) -> some View {
+        Section("Constraints") {
+            // Pin edges (Auto Layout style).
+            HStack(spacing: 6) {
+                pinButton("Leading", "arrow.left.to.line", .leading)
+                pinButton("Top", "arrow.up.to.line", .top)
+                pinButton("Trailing", "arrow.right.to.line", .trailing)
+                pinButton("Bottom", "arrow.down.to.line", .bottom)
+            }
+            HStack(spacing: 6) {
+                pinButton("Center X", "arrow.left.and.right", .centerX)
+                pinButton("Center Y", "arrow.up.and.down", .centerY)
+                pinButton("Width", "arrow.left.and.right.square", .width)
+                pinButton("Height", "arrow.up.and.down.square", .height)
+            }
+            HStack {
+                Button("Resolve") { store.resolveSelectedConstraints() }
+                    .disabled(layer.constraints.isEmpty)
+                    .help("Re-lay this layer from its constraints for the current size")
+                Spacer()
+                Button("Clear", role: .destructive) { store.clearConstraints() }
+                    .disabled(layer.constraints.isEmpty)
+            }
+            if !layer.constraints.isEmpty {
+                Text(layer.constraints.map { describe($0) }.joined(separator: ", "))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func pinButton(_ help: String, _ icon: String, _ edge: LayerEdge) -> some View {
+        let active = store.isPinned(edge)
+        return Button { store.togglePin(edge) } label: {
+            Image(systemName: icon)
+                .frame(width: 22, height: 22)
+                .background(active ? Color.accentColor : Color.secondary.opacity(0.15),
+                            in: RoundedRectangle(cornerRadius: 5))
+                .foregroundStyle(active ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func describe(_ c: LayerConstraint) -> String {
+        switch c.edge {
+        case .width, .height: return "\(c.edge.rawValue) \(Int(c.constant))"
+        case .centerX, .centerY: return c.edge.rawValue
+        default: return "\(c.edge.rawValue) \(Int(c.constant))"
+        }
+    }
+
+    // MARK: - Asset section
+
+    @ViewBuilder
+    private func assetSection(_ layer: Layer) -> some View {
+        Section("Asset") {
+            Picker("Asset", selection: Binding(
+                get: { layer.assetID },
+                set: { id in store.updateSelectedLayer { $0.assetID = id } })) {
+                Text("None").tag(UUID?.none)
+                ForEach(store.document.assets) { asset in
+                    Text(asset.name).tag(UUID?.some(asset.id))
+                }
+            }
+        }
+    }
+}
+
+/// Alignment/distribute controls for multi-selection.
+struct AlignmentControls: View {
+    @EnvironmentObject var store: DocumentStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Align").font(.headline)
+            HStack {
+                button("Left", "align.horizontal.left") { store.alignSelection(.left) }
+                button("Center", "align.horizontal.center") { store.alignSelection(.hCenter) }
+                button("Right", "align.horizontal.right") { store.alignSelection(.right) }
+            }
+            HStack {
+                button("Top", "align.vertical.top") { store.alignSelection(.top) }
+                button("Middle", "align.vertical.center") { store.alignSelection(.vCenter) }
+                button("Bottom", "align.vertical.bottom") { store.alignSelection(.bottom) }
+            }
+            Text("Distribute").font(.headline)
+            HStack {
+                button("Horizontally", "distribute.horizontal") { store.distributeSelection(.horizontal) }
+                button("Vertically", "distribute.vertical") { store.distributeSelection(.vertical) }
+            }
+        }
+    }
+
+    private func button(_ help: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: icon) }
+            .buttonStyle(.bordered)
+            .help(help)
+    }
+}
+
+/// Minimal stand-in for ContentUnavailableView to keep a wide deployment range.
+struct ContentUnavailableViewCompat: View {
+    let title: String
+    let systemImage: String
+    let description: String
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: systemImage).font(.system(size: 34)).foregroundStyle(.secondary)
+            Text(title).font(.headline)
+            Text(description).font(.callout).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+}

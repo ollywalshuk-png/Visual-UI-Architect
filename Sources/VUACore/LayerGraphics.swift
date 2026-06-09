@@ -1,0 +1,154 @@
+import Foundation
+
+/// Vector shape primitives a shape layer can render. Each maps to a real
+/// SwiftUI shape or `Path` in generated code.
+public enum ShapeKind: String, Codable, Hashable, Sendable, CaseIterable {
+    case rectangle
+    case roundedRectangle
+    case ellipse
+    case capsule
+    case star
+    case divider
+    case card        // rounded panel with subtle styling
+    case glassPanel  // translucent material panel
+    case callout     // rounded rect with a pointer
+
+    public var displayName: String {
+        switch self {
+        case .rectangle: return "Rectangle"
+        case .roundedRectangle: return "Rounded Rectangle"
+        case .ellipse: return "Ellipse"
+        case .capsule: return "Capsule"
+        case .star: return "Star"
+        case .divider: return "Divider"
+        case .card: return "Card"
+        case .glassPanel: return "Glass Panel"
+        case .callout: return "Callout"
+        }
+    }
+}
+
+/// Semantic role of a layer — informs validation, presets, and future
+/// export targets. Purely organisational; does not change rendering.
+public enum LayerRole: String, Codable, Hashable, Sendable, CaseIterable {
+    case background, panel, decoration, control, label, input
+    case navigation, dataVisualisation, mask, guide
+    case exportOnly   // present in generated code, hidden in editor
+    case editorOnly   // editor scaffolding, omitted from generated code
+
+    public var displayName: String {
+        switch self {
+        case .dataVisualisation: return "Data Visualisation"
+        case .exportOnly: return "Export Only"
+        case .editorOnly: return "Editor Only"
+        default: return rawValue.prefix(1).uppercased() + rawValue.dropFirst()
+        }
+    }
+}
+
+/// A single gradient colour stop.
+public struct GradientStop: Codable, Hashable, Sendable {
+    public var color: VColor
+    public var location: Double   // 0...1
+    public init(color: VColor, location: Double) {
+        self.color = color
+        self.location = location.clamped01
+    }
+}
+
+/// A gradient fill spec — maps to `LinearGradient`/`RadialGradient`/`AngularGradient`.
+public struct GradientSpec: Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, Hashable, Sendable, CaseIterable {
+        case linear, radial, angular
+    }
+    public var kind: Kind
+    public var stops: [GradientStop]
+    /// Unit-space start/end points (0...1) used by linear/angular gradients.
+    public var startPoint: VPoint
+    public var endPoint: VPoint
+
+    public init(kind: Kind = .linear,
+                stops: [GradientStop] = [GradientStop(color: .black, location: 0),
+                                         GradientStop(color: .white, location: 1)],
+                startPoint: VPoint = VPoint(x: 0.5, y: 0),
+                endPoint: VPoint = VPoint(x: 0.5, y: 1)) {
+        self.kind = kind
+        self.stops = stops
+        self.startPoint = startPoint
+        self.endPoint = endPoint
+    }
+
+    /// A top-to-bottom fade from `color` (opaque) to transparent.
+    public static func fade(_ color: VColor = .black) -> GradientSpec {
+        GradientSpec(stops: [GradientStop(color: color, location: 0),
+                             GradientStop(color: VColor(red: color.red, green: color.green, blue: color.blue, alpha: 0), location: 1)])
+    }
+}
+
+/// Drop shadow spec for a layer.
+public struct ShadowSpec: Codable, Hashable, Sendable {
+    public var color: VColor
+    public var radius: Double
+    public var x: Double
+    public var y: Double
+    public init(color: VColor = VColor(red: 0, green: 0, blue: 0, alpha: 0.33),
+                radius: Double = 6, x: Double = 0, y: Double = 2) {
+        self.color = color
+        self.radius = radius
+        self.x = x
+        self.y = y
+    }
+}
+
+/// A straight line / arrow / connector. Points are in the layer's local frame
+/// space (0,0 = top-left of the frame), so the line moves/resizes with it.
+public struct LineSpec: Codable, Hashable, Sendable {
+    public var start: VPoint
+    public var end: VPoint
+    public var dashed: Bool
+    public var arrowStart: Bool
+    public var arrowEnd: Bool
+    public init(start: VPoint, end: VPoint, dashed: Bool = false,
+                arrowStart: Bool = false, arrowEnd: Bool = false) {
+        self.start = start
+        self.end = end
+        self.dashed = dashed
+        self.arrowStart = arrowStart
+        self.arrowEnd = arrowEnd
+    }
+}
+
+/// Regular polygon / star spec.
+public struct PolygonSpec: Codable, Hashable, Sendable {
+    public var sides: Int             // >= 3
+    public var rotationDegrees: Double
+    /// nil → regular polygon; 0...1 → star with this inner-radius ratio.
+    public var starInnerRatio: Double?
+    public init(sides: Int = 6, rotationDegrees: Double = 0, starInnerRatio: Double? = nil) {
+        self.sides = Swift.max(3, sides)
+        self.rotationDegrees = rotationDegrees
+        self.starInnerRatio = starInnerRatio
+    }
+    public var isValid: Bool { sides >= 3 && (starInnerRatio.map { $0 > 0 && $0 < 1 } ?? true) }
+}
+
+/// Masking metadata applied to a layer (and its children when it's a group).
+public struct MaskSpec: Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, Hashable, Sendable, CaseIterable {
+        case shape   // clip to a ShapeKind
+        case image   // alpha from an image asset
+        case alpha   // alpha from the masking layer's own rendering
+    }
+    public var kind: Kind
+    /// Shape used when `kind == .shape`.
+    public var shape: ShapeKind
+    public var invert: Bool
+    public var feather: Double   // metadata; blur radius applied to the mask
+    public init(kind: Kind = .shape, shape: ShapeKind = .roundedRectangle,
+                invert: Bool = false, feather: Double = 0) {
+        self.kind = kind
+        self.shape = shape
+        self.invert = invert
+        self.feather = feather
+    }
+}

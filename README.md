@@ -1,0 +1,204 @@
+# Visual UI Architect
+
+A developer-focused **visual UI engineering environment** for Apple platforms.
+Manipulate real application layouts on a Photoshop/Figma-style canvas while the
+system keeps design and production-quality code in sync.
+
+> Visual-first code engineering — not a mock-up tool, not low-code.
+
+## Status
+
+- **Phase 1 — Foundation:** runnable macOS app, modular engines, visual editing,
+  SwiftUI codegen, validation, git, AI abstraction.
+- **Phase 2 — Repository round-trip (done):** open existing SwiftUI files/repos,
+  parse views into layers with **SwiftSyntax** (no regex), edit visually, and
+  **apply changes back to source preserving comments/formatting**. External edits
+  (e.g. from Xcode) refresh the canvas automatically. Safe-apply pipeline:
+  validate → write → `swift build` → git diff.
+- **Phase 3 — Assets + plugin components (done):** asset library (import
+  PNG/JPEG/SVG/PDF, search, tags, lock, replace, **drag onto canvas**); plugin
+  controls (**knob/fader/meter/slider/switch**) as first-class layers carrying
+  **AU parameter metadata** (id, range, default, unit, steps) edited in the
+  inspector and emitted into generated SwiftUI; **asset name write-back** to
+  source via the safe-apply pipeline.
+- **Phase 4 — Controls library + constraint editor (done):** a real reusable
+  SwiftUI control library (**`VUAControls`**: `KnobView`, `FaderView`,
+  `MeterView`, `ControlView`) that generated code `import`s and parameterises
+  with each control's range/default/label; a **visual constraint editor**
+  (pin edges, center, fix size) on top of `ConstraintEngine`, with a *Resolve*
+  action that re-lays a layer for the current size. A `ControlsExample` target
+  compiles generated-style code against the library so the API can't drift.
+- **Phase 5 — Export Integrity Pipeline (done):** generated SwiftUI is now
+  **portable and target-buildable**. The new **`ExportIntegrityEngine`** writes
+  a self-contained SwiftPM package containing the generated view, every
+  referenced image (SwiftSyntax-scanned, sanitised, copied), the
+  **`VUAControls` sources** as a local module, an asset manifest, an AU
+  **parameter manifest**, and a human-readable export report. Diagnostics
+  cover missing/unresolved assets, duplicate filenames, unsupported formats,
+  unsafe filenames, placeholder parameters, unbound controls, and
+  unsatisfiable imports. The verification harness exports a Trinity8-style UI
+  to a temp dir and **runs `swift build` on the exported package**, so the
+  test fails if generated code ever stops compiling outside Visual UI Architect.
+- **Phase 6 — Persistence (done):** projects save as a **`.vuaproj` document
+  bundle** (`document.json` + `Assets/`) — a single self-contained item that
+  travels between machines with the layout *and* every imported image. New
+  `PersistenceEngine`. Standard File menu (`⌘N` / `⌘O` / `⌘S` / `⌘⇧S` / Open
+  Recent), dirty-state tracking, "Edited" marker in the title bar, and
+  **auto-reopen of the last document on launch**. Imported assets are copied
+  into the bundle on save so the project survives the original import path
+  going away.
+- **Phase 7 — General-purpose UI tools (done):** Visual UI Architect is no
+  longer plugin-only. New layer kinds — **groups**, **shapes**
+  (rectangle/rounded/ellipse/capsule/star/divider/card/glass/callout),
+  **lines/arrows**, **polygons/stars**, **gradients**, and **masks** — each
+  with fill/stroke/corner-radius/opacity/**shadow**/**blur**/**rotation**, plus
+  **layer roles**, notes, and tags. **Clipboard** (cut/copy/paste with fresh
+  ids), **multi-selection** (shift/⌘-click, group transform, align/distribute),
+  **group/ungroup**, full **z-order** (front/back/forward/backward), and a
+  **23-preset library** (app screens, panels, cards, dashboards, forms, modals,
+  and plugin blocks like oscillator/filter/ADSR/mixer). Code generation emits
+  real SwiftUI shapes, `Path`s, `LinearGradient`/`RadialGradient`/`AngularGradient`,
+  `.clipShape`/`.mask`, `.shadow`/`.blur`/`.rotationEffect` — anchors preserved.
+  The repository parser maps `Rectangle`/`RoundedRectangle`/`Circle`/`Capsule`/
+  `Divider` to shape layers (SwiftSyntax, no regex). Validation gained
+  structural checks (zero-size, invisible, transparent, invalid polygon,
+  missing asset, empty group, inverted mask). The harness exports a
+  shapes+gradient+group+star UI and **`swift build`s it** to prove portability.
+
+- **Phase 8 — Canvas workflow (done):** professional canvas navigation —
+  **zoom to fit / 100% / to-selection**, pinch-to-zoom, and zoom ± with a
+  shared clamp; a **grid overlay** with adjustable spacing and **snap-to-grid**;
+  draggable **ruler guides** (double-click to remove) that layers snap to;
+  **rulers** with auto-spaced "nice" tick steps that never crowd at any zoom;
+  and live **alignment guides** while dragging (edge/center). The snap maths
+  (`CanvasGrid`, `CanvasViewport`, `CanvasRuler`, `AlignmentGuides`) live in
+  `CanvasEngine` and are unit-checked.
+
+- **Phase 9 — Document safety (done):** **autosave** (timer → recovery file) and
+  **crash recovery** (a restore prompt on next launch if the previous session
+  didn't exit cleanly); **save-before-close** prompt (`⌘W` Close command →
+  Save / Don't Save / Cancel); **version snapshots** stored inside
+  `.vuaproj/Snapshots/` (captured on every save, pruned to the newest 25, with a
+  restore browser); and **corrupted-document diagnostics** (`VUABundle.diagnose`)
+  so a damaged or incomplete bundle reports a clear reason instead of crashing.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 142 checks).
+
+## Requirements
+
+- macOS 14+
+- Swift 6 toolchain (Command Line Tools is enough — Xcode optional)
+
+## Build & run
+
+```bash
+# Build a double-clickable .app (no Xcode needed)
+./Scripts/make_app.sh
+open "dist/Visual UI Architect.app"
+
+# Or run directly during development
+swift run VisualUIArchitect
+```
+
+## Verify
+
+```bash
+# Toolchain-independent engine checks (works without Xcode)
+swift run VUACheck
+
+# Full XCTest suite (requires Xcode or a CI toolchain with XCTest)
+swift test
+```
+
+## Architecture
+
+Modular Swift Package — no monolith. Each engine is a single-responsibility
+target depending only on the shared domain layer (`VUACore`).
+
+| Module | Responsibility |
+|---|---|
+| `VUACore` | Platform-independent domain models (`Layer`, `Document`, geometry, color, constraints, assets, devices). `Codable`/`Sendable`. |
+| `LayerEngine` | Tree mutation, hit-testing, align/distribute, snapping. |
+| `CanvasEngine` | Drag/resize/marquee interaction geometry. |
+| `AssetEngine` | Asset library: import PNG/JPEG/SVG/PDF (retina-aware), replace, tag, filter. |
+| `LayoutEngine` | Responsive adaptation, size classes, breakpoints. |
+| `ConstraintEngine` | Pin/center/proportional constraint solving. |
+| `ValidationEngine` | WCAG contrast, touch targets, overlap/clipping, accessibility. |
+| `GitEngine` | Local-first git: status/diff/commit/branch/history/rollback. |
+| `CodeGenEngine` | Production-quality **SwiftUI** generation (UIKit/AppKit/React/Flutter/Compose scaffolded). |
+| `AIEngine` | Provider-abstracted `AgentAdapter` — suggestions only, never edits files. |
+| `PreviewEngine` | Flattened, absolutely-positioned render model for any front-end. |
+| `RepositoryEngine` | **SwiftSyntax** parse (source → layers), source-fidelity write-back, repo scanner, file watcher, safe-apply pipeline. |
+| `VUAControls` | Shipping reusable SwiftUI controls (`KnobView`/`FaderView`/`MeterView`/`ControlView`) that generated code imports. |
+| `ExportIntegrityEngine` | Portable SwiftPM export: image-reference scanner (SwiftSyntax), asset copy + manifest, VUAControls source export, AU parameter manifest, diagnostics, report. |
+| `PersistenceEngine` | `.vuaproj` bundle I/O, recent documents, **version snapshots**, **autosave/crash recovery**, corrupted-doc diagnostics. |
+| `PresetEngine` | Reusable, insertable layout presets (app screens, panels, cards, dashboards, forms, plugin blocks). |
+| `VisualUIArchitect` | SwiftUI app (MVVM): canvas, layer panel, repository browser, inspector, validation, toolbar. |
+
+### Design principles
+
+- **Bidirectional sync** — every layer carries a `CodeBinding` anchor so generated
+  code round-trips to source.
+- **Local-first & private** — no cloud upload, no telemetry, no remote code execution.
+- **AI is optional and non-destructive** — it proposes `ProposedChange` values the
+  user must approve; the app applies them, never the adapter.
+- **Validate before commit** — the code preview surfaces blocking validation errors.
+
+## Repository round-trip (Phase 2)
+
+In the app, switch the sidebar to **Repository**:
+
+1. **Open Repo** (a folder) or **Open File** (a `.swift` view).
+2. Pick a SwiftUI view — it's parsed into editable layers on the canvas.
+3. Edit visually (move/resize/restyle).
+4. **Apply to Source** → *Apply* (validate + write + diff) or *Safe Apply* (also runs `swift build`).
+5. Review the result sheet (stages, git diff, build output), then commit when ready.
+
+Editing the file externally (e.g. in Xcode) refreshes the canvas automatically.
+
+Parser scope: `View` structs whose `body` uses stacks (`VStack`/`HStack`/`ZStack`/`Group`)
+and common leaves (`Text`, `Button`, `Image`, `Slider`, `Toggle`, `Label`). Write-back
+currently round-trips `.position`/`.frame` by `accessibilityIdentifier` anchor; all other
+source is preserved byte-for-byte.
+
+## Assets & plugin controls (Phase 3)
+
+- **Assets** sidebar tab: **Import** PNG/JPEG/SVG/PDF, search by name/tag,
+  right-click to assign/replace/tag/lock/delete, and **drag a thumbnail onto the
+  canvas** to create an image (or a locked background for `bg`-tagged assets).
+- **Add Layer ▸ Plugin Controls**: knob, fader, slider, meter, switch. Each gets
+  default **AU parameter metadata** editable in the inspector's *AU Parameter*
+  section (param id, display, min/max/default, unit, continuous/steps).
+- Generated SwiftUI emits a `// AU param:` comment and a conventional control
+  view (`KnobView`/`FaderView`/`MeterView`) you supply, keeping the anchor stable.
+- **Apply to Source** also round-trips assigned image asset names back into
+  `Image(...)` calls.
+
+## Export Integrity Pipeline (Phase 5)
+
+Toolbar ▸ **Export** opens the export panel.
+
+1. Pick a destination folder, set the module name, and choose whether to
+   bundle `VUAControls` (recommended — the export is self-contained).
+2. Click **Export**. The pipeline:
+   - generates SwiftUI (no `#Preview` macro, for CLT-portable builds);
+   - scans the generated source with **SwiftSyntax** for every `Image("…")`
+     reference and matches each to an imported asset (no regex);
+   - copies asset files into `Sources/<Module>/Resources/`, sanitising
+     unsafe filenames and rejecting duplicates;
+   - copies `VUAControls` sources into `Sources/VUAControls/` as a local module;
+   - writes `Package.swift`, an asset manifest, a parameter manifest, and a
+     Markdown export report;
+   - surfaces diagnostics for missing assets, unsupported formats,
+     placeholder parameters, unbound controls, and unsatisfiable imports.
+
+The verification harness exercises this end-to-end: it exports a
+Trinity8-style UI to a temp directory and **runs `swift build` on it** so the
+test fails if generated code ever stops compiling outside Visual UI Architect.
+
+## Roadmap
+
+Next: richer write-back (style/text/structural inserts), navigation parsing,
+relative (layer-to-layer) constraints in the editor, device chrome frames,
+**MIDI CC / automation binding** for AU parameters, an Xcode `.xcassets`
+export route, additional code-gen targets, and a plugin API.
