@@ -114,7 +114,18 @@ system keeps design and production-quality code in sync.
   Diagnostics** panel (toolbar ▸ hammer) shows context, pipeline, command, and
   diagnostics.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 170 checks).
+- **Phase 12 — Source / asset / layer hardening (done):** a **`HardeningValidator`**
+  (duplicate layer IDs, duplicate source anchors, off-canvas layers, hidden-parent
+  traps, fully-transparent gradients, background-above-controls and
+  control-behind-opaque-panel z-order mistakes, asset name collisions — exact,
+  case-only, and sanitised — plus missing/external asset files) and a
+  **`SourceSafety` preflight** that runs before every Apply-to-Source: merge-conflict
+  markers, read-only/missing files, **external-edit detection via SHA-256 source
+  hashes**, CRLF/tab fingerprints (preserved on write), and **anchor sanity**
+  (each targeted anchor must exist exactly once). The safe-apply pipeline gained
+  a blocking **preflight stage** between validate and write.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 189 checks).
 
 ## Requirements
 

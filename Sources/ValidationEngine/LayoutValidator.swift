@@ -79,13 +79,15 @@ public struct ValidationService: Sendable {
     private let accessibility = AccessibilityValidator()
     private let layout = LayoutValidator()
     private let structure = StructureValidator()
+    private let hardening = HardeningValidator()
 
     public init() {}
 
-    public func validate(_ document: Document) -> ValidationReport {
+    public func validate(_ document: Document, bundleURL: URL? = nil) -> ValidationReport {
         var issues = accessibility.validate(document)
         issues.append(contentsOf: layout.validate(document))
         issues.append(contentsOf: structure.validate(document))
+        issues.append(contentsOf: hardening.validate(document, bundleURL: bundleURL))
         issues.sort { $0.severity > $1.severity }
         return ValidationReport(issues: issues)
     }

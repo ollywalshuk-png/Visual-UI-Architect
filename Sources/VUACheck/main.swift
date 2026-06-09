@@ -839,6 +839,92 @@ func runChecks() async {
         c.check("p11 exception", false)
     }
 
+    // MARK: Phase 12 — source / asset / layer hardening
+    do {
+        let hardening = HardeningValidator()
+
+        // Duplicate layer IDs + duplicate source anchors.
+        var dupLayer = Layer(name: "A", kind: .label, frame: VRect(x: 0, y: 0, width: 10, height: 10))
+        dupLayer.binding = CodeBinding(filePath: "V.swift", anchorID: "anchor1")
+        var dupLayer2 = Layer(name: "B", kind: .label, frame: VRect(x: 20, y: 0, width: 10, height: 10))
+        dupLayer2.binding = CodeBinding(filePath: "V.swift", anchorID: "anchor1")
+        let dupDoc = Document(roots: [dupLayer, dupLayer, dupLayer2])
+        let dupIssues = hardening.validate(dupDoc)
+        c.check("duplicate layer ID detected", dupIssues.contains { $0.message.contains("IDs must be unique") && $0.severity == .error })
+        c.check("duplicate anchor detected", dupIssues.contains { $0.message.contains("anchor1") && $0.severity == .error })
+
+        // Off-canvas detection.
+        let off = Layer(name: "Lost", kind: .panel, frame: VRect(x: -5000, y: -5000, width: 50, height: 50))
+        c.check("off-canvas detected", hardening.validate(Document(roots: [off]))
+            .contains { $0.message.contains("off-canvas") })
+
+        // Fully-transparent gradient.
+        var ghost = Layer(name: "Ghost", kind: .panel, frame: VRect(x: 0, y: 0, width: 100, height: 100))
+        ghost.style.gradient = GradientSpec(stops: [
+            GradientStop(color: VColor(red: 1, green: 0, blue: 0, alpha: 0), location: 0),
+            GradientStop(color: VColor(red: 0, green: 0, blue: 1, alpha: 0), location: 1)])
+        c.check("transparent gradient detected", hardening.validate(Document(roots: [ghost]))
+            .contains { $0.message.contains("fully transparent") })
+
+        // Asset collisions: exact, case-only, sanitised.
+        let assetDoc = Document(roots: [], assets: [
+            Asset(name: "Logo", path: "a.png", format: .png),
+            Asset(name: "Logo", path: "b.png", format: .png),
+            Asset(name: "logo", path: "c.png", format: .png),
+            Asset(name: "My Image!", path: "d.png", format: .png),
+            Asset(name: "my_image", path: "e.png", format: .png)
+        ])
+        let assetIssues = hardening.validate(assetDoc)
+        c.check("duplicate asset name", assetIssues.contains { $0.message.contains("both named") && $0.severity == .error })
+        c.check("case-only asset collision", assetIssues.contains { $0.message.contains("differ only by case") })
+        c.check("sanitised asset collision", assetIssues.contains { $0.message.contains("sanitise to the same") })
+        c.check("sanitiser", HardeningValidator.sanitised("My Image!") == "my_image")
+
+        // Missing asset file on disk (absolute path).
+        let gone = Document(roots: [], assets: [Asset(name: "Gone", path: "/nonexistent/\(UUID().uuidString).png", format: .png)])
+        c.check("missing asset file", hardening.validate(gone).contains { $0.message.contains("missing on disk") })
+
+        // Source preflight (pure-text inspection).
+        let conflicted = "let a = 1\n<<<<<<< HEAD\nlet b = 2\n=======\nlet b = 3\n>>>>>>> branch\n"
+        let confFindings = SourceSafety.inspect(source: conflicted, fileName: "F.swift")
+        c.check("merge markers block", confFindings.contains { $0.code == .mergeConflictMarkers && $0.severity == .blocker })
+
+        c.check("CRLF detected", SourceSafety.inspect(source: "a\r\nb\r\n", fileName: "F.swift")
+            .contains { $0.code == .crlfLineEndings })
+        c.check("tabs detected", SourceSafety.inspect(source: "\tlet a = 1\n", fileName: "F.swift")
+            .contains { $0.code == .tabIndentation })
+
+        // External modification (hash drift).
+        let h = SourceSafety.hash(of: "original")
+        c.check("hash stable", SourceSafety.hash(of: "original") == h)
+        c.check("external change detected", SourceSafety.inspect(source: "edited", fileName: "F.swift", expectedHash: h)
+            .contains { $0.code == .externallyModified && $0.severity == .blocker })
+
+        // Anchor sanity in source text.
+        let src = """
+        Text("a").accessibilityIdentifier("dup")
+        Text("b").accessibilityIdentifier("dup")
+        Text("c").accessibilityIdentifier("solo")
+        """
+        c.check("anchor counts", SourceSafety.anchorCounts(in: src) == ["dup": 2, "solo": 1])
+        let anchorFindings = SourceSafety.inspect(source: src, fileName: "F.swift", expectedAnchors: ["dup", "solo", "missing"])
+        c.check("duplicate source anchor blocks", anchorFindings.contains { $0.code == .duplicateAnchors })
+        c.check("missing source anchor blocks", anchorFindings.contains { $0.code == .missingAnchor })
+
+        // File-level preflight: missing + read-only files.
+        let missingURL = fm.temporaryDirectory.appendingPathComponent("missing-\(UUID().uuidString).swift")
+        c.check("preflight missing file", SourceSafety().preflight(fileURL: missingURL).hasBlocker)
+        let roURL = fm.temporaryDirectory.appendingPathComponent("ro-\(UUID().uuidString).swift")
+        try "let x = 1\n".data(using: .utf8)!.write(to: roURL)
+        try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: roURL.path)
+        defer { try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: roURL.path); try? fm.removeItem(at: roURL) }
+        c.check("preflight read-only file", SourceSafety().preflight(fileURL: roURL).findings
+            .contains { $0.code == .notWritable && $0.severity == .blocker })
+    } catch {
+        FileHandle.standardError.write(Data("p12 exception: \(error)\n".utf8))
+        c.check("p12 exception", false)
+    }
+
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")
     exit(c.failures == 0 ? 0 : 1)
 }

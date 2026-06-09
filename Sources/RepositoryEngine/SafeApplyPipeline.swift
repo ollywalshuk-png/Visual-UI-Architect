@@ -6,7 +6,7 @@ import GitEngine
 /// Outcome of the safe-apply pipeline. Mirrors the brief's required flow:
 /// Visual Edit → Validate → Write → Swift Build → Git Diff → (Commit option).
 public struct SafeApplyResult: Sendable {
-    public enum Stage: String, Sendable { case validate, write, build, diff }
+    public enum Stage: String, Sendable { case validate, preflight, write, build, diff }
     /// The stage at which the pipeline stopped, or nil if it ran to completion.
     public var blockedAt: Stage?
     public var validation: ValidationReport
@@ -68,9 +68,33 @@ public struct SafeApplyPipeline {
             }
         }
 
-        // 3. Write each file with source fidelity (positions then image names).
-        var written: [String] = []
+        // 3. Preflight every target file (Phase 12): merge markers, read-only,
+        //    ambiguous/missing anchors. Block before the first byte is written.
         let allFiles = Set(framesByFile.keys).union(imagesByFile.keys)
+        let safety = SourceSafety()
+        var preflightIssues: [ValidationIssue] = []
+        for relPath in allFiles {
+            let url = relPath.hasPrefix("/")
+                ? URL(fileURLWithPath: relPath)
+                : repoRoot.appendingPathComponent(relPath)
+            let anchors = Array(Set((framesByFile[relPath] ?? [:]).keys).union((imagesByFile[relPath] ?? [:]).keys))
+            let result = safety.preflight(fileURL: url, expectedAnchors: anchors)
+            for finding in result.findings where finding.severity == .blocker {
+                preflightIssues.append(ValidationIssue(
+                    severity: .error, category: .structure,
+                    message: finding.message,
+                    recommendation: nil, layerIDs: []))
+            }
+        }
+        if !preflightIssues.isEmpty {
+            return SafeApplyResult(blockedAt: .preflight,
+                                   validation: ValidationReport(issues: report.issues + preflightIssues),
+                                   filesWritten: [], buildRan: false, buildPassed: false,
+                                   buildOutput: "", diff: "")
+        }
+
+        // 4. Write each file with source fidelity (positions then image names).
+        var written: [String] = []
         for relPath in allFiles {
             let url = relPath.hasPrefix("/")
                 ? URL(fileURLWithPath: relPath)

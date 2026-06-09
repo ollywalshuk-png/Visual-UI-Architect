@@ -22,7 +22,7 @@ rebuild app bundle → update README → commit when green.
 | 9+ | Doc-safety gaps: save-before-open/new, two-window, recovery conflict | ✅ done | recovered baseline |
 | 10 | Repo / Workspace safety (`WorkspaceEngine`, `WorkspaceContext`) | ✅ done | recovered baseline |
 | 11 | Build Intelligence (`BuildIntelligenceEngine`) | ✅ done | lifecycle, toolchain, lockfile, failure explainer |
-| 12 | Source / Asset / Layer hardening | ⬜ planned | dup anchors, asset safety, layer safety |
+| 12 | Source / Asset / Layer hardening | ✅ done | HardeningValidator + SourceSafety preflight |
 | 13 | Handoff Generator (`HandoffGeneratorEngine`) | ⬜ planned | generate HANDOFF.md |
 | 14 | UI Quality Engine | ⬜ planned | density/hierarchy/quality scores |
 | 15 | Component System (`ComponentEngine`) | ⬜ planned | masters + instances + propagation |
