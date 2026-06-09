@@ -17,7 +17,7 @@ let package = Package(
             "ConstraintEngine", "ValidationEngine", "GitEngine",
             "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
             "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine", "WorkspaceEngine",
-            "BuildIntelligenceEngine"
+            "BuildIntelligenceEngine", "HandoffGeneratorEngine"
         ])
     ],
     dependencies: [
@@ -68,6 +68,9 @@ let package = Package(
         // Build intelligence: toolchain/package diagnostics + failure explanation.
         .target(name: "BuildIntelligenceEngine", dependencies: ["VUACore"]),
 
+        // AI/developer handoff generation (HANDOFF.md).
+        .target(name: "HandoffGeneratorEngine", dependencies: ["VUACore"]),
+
         // Export Integrity Pipeline: portable, target-buildable SwiftUI export.
         .target(
             name: "ExportIntegrityEngine",
@@ -89,7 +92,7 @@ let package = Package(
                 "LayoutEngine", "ConstraintEngine", "ValidationEngine",
                 "GitEngine", "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
                 "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
-                "WorkspaceEngine", "BuildIntelligenceEngine"
+                "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine"
             ]
         ),
 
@@ -100,7 +103,7 @@ let package = Package(
                 "VUACore", "LayerEngine", "CodeGenEngine", "ValidationEngine",
                 "ConstraintEngine", "LayoutEngine", "PreviewEngine", "AIEngine", "RepositoryEngine",
                 "AssetEngine", "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
-                "CanvasEngine", "WorkspaceEngine", "BuildIntelligenceEngine"
+                "CanvasEngine", "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine"
             ]
         ),
 

@@ -23,7 +23,7 @@ rebuild app bundle → update README → commit when green.
 | 10 | Repo / Workspace safety (`WorkspaceEngine`, `WorkspaceContext`) | ✅ done | recovered baseline |
 | 11 | Build Intelligence (`BuildIntelligenceEngine`) | ✅ done | lifecycle, toolchain, lockfile, failure explainer |
 | 12 | Source / Asset / Layer hardening | ✅ done | HardeningValidator + SourceSafety preflight |
-| 13 | Handoff Generator (`HandoffGeneratorEngine`) | ⬜ planned | generate HANDOFF.md |
+| 13 | Handoff Generator (`HandoffGeneratorEngine`) | ✅ done | 7 modes, deterministic, dirty-state aware |
 | 14 | UI Quality Engine | ⬜ planned | density/hierarchy/quality scores |
 | 15 | Component System (`ComponentEngine`) | ⬜ planned | masters + instances + propagation |
 | 16 | Auto Layout / Responsive Layout | ⬜ planned | stacks/grids/breakpoints |

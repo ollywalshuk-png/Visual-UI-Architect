@@ -18,6 +18,7 @@ import PresetEngine
 import CanvasEngine
 import WorkspaceEngine
 import BuildIntelligenceEngine
+import HandoffGeneratorEngine
 
 // A dependency-free assertion harness so the engines can be verified with
 // `swift run VUACheck` on a machine that has no Xcode (no XCTest).
@@ -923,6 +924,51 @@ func runChecks() async {
     } catch {
         FileHandle.standardError.write(Data("p12 exception: \(error)\n".utf8))
         c.check("p12 exception", false)
+    }
+
+    // MARK: Phase 13 — handoff generator
+    do {
+        let input = HandoffInput(
+            repoPath: "/tmp/Example",
+            branch: "main",
+            latestCommit: "abc1234",
+            workingTreeDirty: false,
+            buildStatus: "clean",
+            checkResult: "189 passed, 0 failed",
+            modules: ["VUACore", "LayerEngine"],
+            capabilities: ["Visual canvas editing"],
+            documentName: "Demo",
+            layerCount: 12,
+            assetCount: 3,
+            targetDevice: "MacBook Pro 14″",
+            warnings: ["example warning"],
+            knownLimitations: ["example limitation"],
+            roadmap: ["Phase 14 — UI Quality Engine"],
+            nextRecommendedPhase: "Phase 14")
+        let gen = HandoffGenerator()
+        let md = gen.generate(input, mode: .fullProject)
+
+        c.check("handoff has mission", md.contains("local-first") && md.contains("Product mission"))
+        c.check("handoff has build commands", md.contains("swift build") && md.contains("swift run VUACheck"))
+        c.check("handoff has module list", md.contains("`VUACore`") && md.contains("`LayerEngine`"))
+        c.check("handoff has safety rules", md.contains("Do not replace SwiftSyntax parsing with regex"))
+        c.check("handoff has roadmap", md.contains("Phase 14 — UI Quality Engine"))
+        c.check("handoff has commit", md.contains("abc1234") && md.contains("main"))
+        c.check("handoff has check result", md.contains("189 passed, 0 failed"))
+        c.check("handoff has recovery", md.contains("git log --oneline"))
+        c.check("handoff has phase rule", md.contains("commit only when green"))
+        c.check("handoff deterministic", md == gen.generate(input, mode: .fullProject))
+
+        // Dirty-tree warning appears when (and only when) the tree is dirty.
+        var dirty = input
+        dirty.workingTreeDirty = true
+        c.check("handoff dirty warning", gen.generate(dirty, mode: .fullProject).contains("DIRTY")
+                && !md.contains("DIRTY"))
+
+        // Bug-fix mode constrains scope and drops the capability inventory.
+        let bugfix = gen.generate(input, mode: .bugFix)
+        c.check("bugfix scope rule", bugfix.contains("No refactors"))
+        c.check("bugfix omits capabilities", !bugfix.contains("do not rebuild"))
     }
 
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")

@@ -13,6 +13,7 @@ struct MainWindow: View {
     @State private var showSnapshots = false
     @State private var showWorkspace = false
     @State private var showBuild = false
+    @State private var showHandoff = false
     @State private var showRecovery = false
     @State private var recovered: PersistenceEngine.RecoveryStore.Recovered?
     @State private var sidebarTab = SidebarTab.layers
@@ -57,6 +58,7 @@ struct MainWindow: View {
         .sheet(isPresented: $showSnapshots) { SnapshotsView().environmentObject(store) }
         .sheet(isPresented: $showWorkspace) { WorkspaceDiagnosticsView().environmentObject(store) }
         .sheet(isPresented: $showBuild) { BuildDiagnosticsView().environmentObject(store) }
+        .sheet(isPresented: $showHandoff) { HandoffView().environmentObject(store) }
         .onAppear {
             if let r = store.pendingRecovery() { recovered = r; showRecovery = true }
         }
@@ -149,6 +151,9 @@ struct MainWindow: View {
             Button { showBuild = true } label: { Label("Build", systemImage: "hammer") }
                 .help("Build diagnostics: toolchain, pipeline, repeatable command, failure explanations")
                 .disabled(store.repositoryRoot == nil)
+
+            Button { showHandoff = true } label: { Label("Handoff", systemImage: "person.line.dotted.person") }
+                .help("Generate an AI/developer continuation handoff (HANDOFF.md)")
 
             Menu {
                 Button("Apply (validate + write + diff)") { runApply(build: false) }

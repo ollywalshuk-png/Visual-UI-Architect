@@ -125,7 +125,16 @@ system keeps design and production-quality code in sync.
   (each targeted anchor must exist exactly once). The safe-apply pipeline gained
   a blocking **preflight stage** between validate and write.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 189 checks).
+- **Phase 13 — Handoff generator (done):** new **`HandoffGeneratorEngine`** —
+  renders a deterministic **HANDOFF.md** (mission, verified repo/build/check
+  state, module map, capability inventory, warnings, limitations, safety rules,
+  recovery commands, roadmap, next work) in seven modes (full project /
+  current document / bug-fix / next-phase / export / AI model / developer).
+  Toolbar ▸ **Handoff** previews it, copies to clipboard, or writes it into
+  the repository root. Dirty working trees are flagged inside the document
+  so a handoff can never silently claim a clean state.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 202 checks).
 
 ## Requirements
 
