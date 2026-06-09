@@ -134,7 +134,19 @@ system keeps design and production-quality code in sync.
   the repository root. Dirty working trees are flagged inside the document
   so a handoff can never silently claim a clean state.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 202 checks).
+- **Phase 14 — UI quality engine (done):** new **`UIQualityEngine`** — answers
+  *"is this a good interface?"*, not just *"does it build?"*. Heuristic checks:
+  information **density** (controls per screen/area), **8-point-grid** and
+  spacing consistency, **alignment near-misses** (1–3 px), **WCAG contrast**
+  (text vs effective background, AA thresholds), **tap targets** (44 pt on
+  touch devices only), **icon-only buttons** without labels, **text
+  overflow/truncation** and unbreakable URL runs, **palette size**, effect
+  **noise** (shadow/blur/gradient saturation), and missing hierarchy on busy
+  screens. Produces 0–100 **scores with grades** (Design / Layout / Calm /
+  Accessibility / Responsive + overall), top-five fixes, and per-finding
+  recommendations with layer selection. Toolbar ▸ **Quality**.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 215 checks).
 
 ## Requirements
 
@@ -186,6 +198,8 @@ target depending only on the shared domain layer (`VUACore`).
 | `PersistenceEngine` | `.vuaproj` bundle I/O, recent documents, **version snapshots**, **autosave/crash recovery** (with newer/older conflict classification), open-document registry, corrupted-doc diagnostics. |
 | `WorkspaceEngine` | Repo/workspace safety: `WorkspaceResolver` → `WorkspaceContext` (repo root, branch, commit, dirty state, package inventory, confidence score) + wrong-repo/nested-repo/stale-scan/export-folder diagnostics, refreshed before every apply. |
 | `BuildIntelligenceEngine` | Build lifecycle model, toolchain/package/lockfile diagnostics, repeatable command formatting, generated-import scanning, plain-English build-failure explanations. |
+| `HandoffGeneratorEngine` | Deterministic HANDOFF.md generation (7 modes) with verified-state table, safety rules, and recovery commands. |
+| `UIQualityEngine` | Heuristic interface-quality assessment: density, grid/spacing, alignment, WCAG contrast, tap targets, overflow, palette/effect noise → scored report with fixes. |
 | `PresetEngine` | Reusable, insertable layout presets (app screens, panels, cards, dashboards, forms, plugin blocks). |
 | `VisualUIArchitect` | SwiftUI app (MVVM): canvas, layer panel, repository browser, inspector, validation, toolbar. |
 

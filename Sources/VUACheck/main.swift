@@ -19,6 +19,7 @@ import CanvasEngine
 import WorkspaceEngine
 import BuildIntelligenceEngine
 import HandoffGeneratorEngine
+import UIQualityEngine
 
 // A dependency-free assertion harness so the engines can be verified with
 // `swift run VUACheck` on a machine that has no Xcode (no XCTest).
@@ -969,6 +970,81 @@ func runChecks() async {
         let bugfix = gen.generate(input, mode: .bugFix)
         c.check("bugfix scope rule", bugfix.contains("No refactors"))
         c.check("bugfix omits capabilities", !bugfix.contains("do not rebuild"))
+    }
+
+    // MARK: Phase 14 — UI quality engine
+    do {
+        let qa = QualityAssessor()
+
+        // Contrast: grey-on-grey text must be flagged; black-on-white must not.
+        var lowText = Layer(name: "Faint", kind: .label, frame: VRect(x: 0, y: 0, width: 200, height: 20), text: "Hello")
+        lowText.style.foregroundColor = VColor(hex: "#9A9A9A")
+        lowText.style.backgroundColor = VColor(hex: "#8C8C8C")
+        let lowReport = qa.assess(Document(roots: [lowText]))
+        c.check("low contrast flagged", lowReport.issues.contains { $0.dimension == .contrast && $0.severity == .problem })
+        var goodText = lowText
+        goodText.style.foregroundColor = VColor(hex: "#000000")
+        goodText.style.backgroundColor = VColor(hex: "#FFFFFF")
+        c.check("good contrast clean", !qa.assess(Document(roots: [goodText])).issues.contains { $0.dimension == .contrast })
+        c.check("contrast ratio maths", abs(QualityAssessor.contrastRatio(.white, .black) - 21) < 0.2)
+
+        // Density: 35 controls trip the problem threshold.
+        let many = (0..<35).map { i in
+            Layer(name: "K\(i)", kind: .knob, frame: VRect(x: Double(i % 8) * 90, y: Double(i / 8) * 90, width: 64, height: 64))
+        }
+        c.check("density flagged", qa.assess(Document(roots: many)).issues.contains { $0.dimension == .density && $0.severity == .problem })
+
+        // Tap targets: tiny button on iPhone flagged; same on Mac not.
+        let tiny = Layer(name: "Tap", kind: .button, frame: VRect(x: 0, y: 0, width: 30, height: 24), text: "Go")
+        var touchDoc = Document(roots: [tiny])
+        if let phone = DeviceProfile.catalog.first(where: { $0.family == .iPhone }) {
+            touchDoc.activeDevice = phone
+            c.check("tap target flagged on touch", qa.assess(touchDoc).issues.contains { $0.message.contains("44") })
+        } else {
+            c.check("tap target flagged on touch", false)
+        }
+        var macDoc = Document(roots: [tiny])
+        if let mac = DeviceProfile.catalog.first(where: { $0.family == .mac }) {
+            macDoc.activeDevice = mac
+            c.check("tap target ok on mac", !qa.assess(macDoc).issues.contains { $0.message.contains("44") })
+        } else {
+            c.check("tap target ok on mac", false)
+        }
+
+        // Icon-only button label warning.
+        let iconOnly = Layer(name: "Gear", kind: .button, frame: VRect(x: 0, y: 0, width: 44, height: 44))
+        c.check("icon-only button flagged", qa.assess(Document(roots: [iconOnly])).issues
+            .contains { $0.dimension == .accessibility && $0.message.contains("no title") })
+
+        // Text overflow: long copy in a narrow frame.
+        let overflow = Layer(name: "Caption", kind: .label, frame: VRect(x: 0, y: 0, width: 60, height: 18),
+                             text: "An extremely long caption that cannot possibly fit")
+        c.check("overflow flagged", qa.assess(Document(roots: [overflow])).issues
+            .contains { $0.dimension == .typography && $0.message.contains("truncate") })
+        let url = Layer(name: "Link", kind: .label, frame: VRect(x: 0, y: 0, width: 80, height: 18),
+                        text: "https://example.com/a/very/long/unbreakable/path/segment")
+        c.check("unbreakable run flagged", qa.assess(Document(roots: [url])).issues
+            .contains { $0.message.contains("unbreakable") })
+
+        // Spacing: off-grid layers flagged.
+        let offGrid = (0..<6).map { i in
+            Layer(name: "P\(i)", kind: .panel, frame: VRect(x: Double(i) * 50 + 1.7, y: 3.3, width: 40, height: 40))
+        }
+        c.check("off-grid spacing flagged", qa.assess(Document(roots: offGrid)).issues.contains { $0.dimension == .spacing })
+
+        // Visual noise: effects on everything.
+        let noisy = (0..<10).map { i -> Layer in
+            var l = Layer(name: "N\(i)", kind: .panel, frame: VRect(x: Double(i) * 48, y: 0, width: 40, height: 40))
+            l.style.shadow = ShadowSpec()
+            return l
+        }
+        let noisyReport = qa.assess(Document(roots: noisy))
+        c.check("effect noise flagged", noisyReport.issues.contains { $0.dimension == .noise })
+
+        // Scores: clean doc outscores noisy doc; grades map sanely.
+        let clean = qa.assess(Document(roots: [goodText]))
+        c.check("scores ordering", clean.scores.overall > noisyReport.scores.overall)
+        c.check("grade mapping", QualityScores.grade(95) == "A" && QualityScores.grade(40) == "E")
     }
 
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")

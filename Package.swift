@@ -17,7 +17,7 @@ let package = Package(
             "ConstraintEngine", "ValidationEngine", "GitEngine",
             "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
             "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine", "WorkspaceEngine",
-            "BuildIntelligenceEngine", "HandoffGeneratorEngine"
+            "BuildIntelligenceEngine", "HandoffGeneratorEngine", "UIQualityEngine"
         ])
     ],
     dependencies: [
@@ -71,6 +71,9 @@ let package = Package(
         // AI/developer handoff generation (HANDOFF.md).
         .target(name: "HandoffGeneratorEngine", dependencies: ["VUACore"]),
 
+        // UI quality assessment: density/spacing/contrast/noise heuristics + scores.
+        .target(name: "UIQualityEngine", dependencies: ["VUACore"]),
+
         // Export Integrity Pipeline: portable, target-buildable SwiftUI export.
         .target(
             name: "ExportIntegrityEngine",
@@ -92,7 +95,8 @@ let package = Package(
                 "LayoutEngine", "ConstraintEngine", "ValidationEngine",
                 "GitEngine", "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
                 "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
-                "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine"
+                "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine",
+                "UIQualityEngine"
             ]
         ),
 
@@ -103,7 +107,8 @@ let package = Package(
                 "VUACore", "LayerEngine", "CodeGenEngine", "ValidationEngine",
                 "ConstraintEngine", "LayoutEngine", "PreviewEngine", "AIEngine", "RepositoryEngine",
                 "AssetEngine", "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
-                "CanvasEngine", "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine"
+                "CanvasEngine", "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine",
+                "UIQualityEngine"
             ]
         ),
 
