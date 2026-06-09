@@ -81,8 +81,26 @@ system keeps design and production-quality code in sync.
   `.vuaproj/Snapshots/` (captured on every save, pruned to the newest 25, with a
   restore browser); and **corrupted-document diagnostics** (`VUABundle.diagnose`)
   so a damaged or incomplete bundle reports a clear reason instead of crashing.
+  Gap-closure follow-up: **save-before-open / save-before-new** guards routed
+  through the same dirty-check as Close; **recovery conflict classification**
+  (recovery newer / older than the saved project, surfaced in the restore
+  prompt); and an **open-document registry** that detects the same `.vuaproj`
+  being edited from two windows/instances.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 142 checks).
+- **Phase 10 — Repo / workspace safety (done):** new **`WorkspaceEngine`**.
+  `WorkspaceResolver` scans a chosen root and builds a **`WorkspaceContext`**
+  (repo root, branch, latest commit, dirty state, Package/xcodeproj/xcworkspace
+  inventory, source files, asset roots, scan timestamp, confidence score) with
+  diagnostics for the dangerous cases: **nested/multiple repos**, multiple
+  `Package.swift`, **generated-export-folder selected as source repo**,
+  `.build`/dependency folders selected accidentally, dirty tree, detached HEAD,
+  merge/rebase in progress, git lock files, and **stale scans** (file changed
+  or deleted after parse). The context **refreshes before Apply-to-Source** and
+  blocks/warns instead of writing into the wrong place. A **Workspace
+  Diagnostics** panel (toolbar) shows the active repo/branch/dirty badges and
+  every detected warning.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 154 checks).
 
 ## Requirements
 
@@ -131,7 +149,8 @@ target depending only on the shared domain layer (`VUACore`).
 | `RepositoryEngine` | **SwiftSyntax** parse (source → layers), source-fidelity write-back, repo scanner, file watcher, safe-apply pipeline. |
 | `VUAControls` | Shipping reusable SwiftUI controls (`KnobView`/`FaderView`/`MeterView`/`ControlView`) that generated code imports. |
 | `ExportIntegrityEngine` | Portable SwiftPM export: image-reference scanner (SwiftSyntax), asset copy + manifest, VUAControls source export, AU parameter manifest, diagnostics, report. |
-| `PersistenceEngine` | `.vuaproj` bundle I/O, recent documents, **version snapshots**, **autosave/crash recovery**, corrupted-doc diagnostics. |
+| `PersistenceEngine` | `.vuaproj` bundle I/O, recent documents, **version snapshots**, **autosave/crash recovery** (with newer/older conflict classification), open-document registry, corrupted-doc diagnostics. |
+| `WorkspaceEngine` | Repo/workspace safety: `WorkspaceResolver` → `WorkspaceContext` (repo root, branch, commit, dirty state, package inventory, confidence score) + wrong-repo/nested-repo/stale-scan/export-folder diagnostics, refreshed before every apply. |
 | `PresetEngine` | Reusable, insertable layout presets (app screens, panels, cards, dashboards, forms, plugin blocks). |
 | `VisualUIArchitect` | SwiftUI app (MVVM): canvas, layer panel, repository browser, inspector, validation, toolbar. |
 

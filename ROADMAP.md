@@ -18,9 +18,9 @@ rebuild app bundle → update README → commit when green.
 | 6 | `.vuaproj` persistence | ✅ done | `2313da0` |
 | 7 | Shapes, gradients, groups, multi-select, clipboard, presets | ✅ done | `12df2d3` |
 | 8 | Canvas workflow (zoom/grid/rulers/guides/snap) | ✅ done | `9750b21` |
-| 9 | Document safety (autosave, recovery, snapshots, save-before-close) | ✅ done | `e04bd58` |
-| 9+ | Doc-safety gaps: save-before-open/new, two-window, recovery conflict | 🔜 next | this slice |
-| 10 | Repo / Workspace safety (`WorkspaceSafetyEngine`, `WorkspaceContext`) | 🔜 next | this slice |
+| 9 | Document safety (autosave, recovery, snapshots, save-before-close) | ✅ done | `e04bd58`† |
+| 9+ | Doc-safety gaps: save-before-open/new, two-window, recovery conflict | ✅ done | recovered baseline |
+| 10 | Repo / Workspace safety (`WorkspaceEngine`, `WorkspaceContext`) | ✅ done | recovered baseline |
 | 11 | Build Intelligence (`BuildIntelligenceEngine`) | ⬜ planned | build lifecycle/diagnostics |
 | 12 | Source / Asset / Layer hardening | ⬜ planned | dup anchors, asset safety, layer safety |
 | 13 | Handoff Generator (`HandoffGeneratorEngine`) | ⬜ planned | generate HANDOFF.md |
@@ -44,6 +44,14 @@ rebuild app bundle → update README → commit when green.
 | 31 | Security / privacy / licensing | ⬜ planned | privacy + licence reports |
 | 32 | Backup / archive / portability | ⬜ planned | zip export, restore, integrity |
 | 33 | Deployment / distribution | ⬜ planned | bundle/signing/notarisation readiness |
+
+† **History note (2026-06-09):** the original `.git` directory was lost when
+the project was restored from a Google Drive zip export (Drive strips
+dot-directories). All commit hashes above for Phases 1–9 refer to that lost
+history and exist only as a record. The repository was re-initialised from the
+recovered source — verified `swift build` clean and VUACheck 154/0 at recovery
+— starting at commit `f86cd8b` ("Recovered baseline"). Lesson: back up the
+repo with `git bundle` or push to a remote, not via folder-zip exports.
 
 ## Standing rules
 - Local-first, no paid/cloud deps, no telemetry.
