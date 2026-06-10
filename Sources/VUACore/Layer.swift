@@ -248,6 +248,9 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
     public var mask: MaskSpec?
     /// Clip the layer's content to this shape (`.clipShape` in generated code).
     public var clipShape: ShapeKind?
+    /// When set, this layer is an *instance* of the component with this id
+    /// (its children are derived from the component master). Phase 15.
+    public var componentID: UUID?
 
     public var children: [Layer]
 
@@ -274,6 +277,7 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
         polygon: PolygonSpec? = nil,
         mask: MaskSpec? = nil,
         clipShape: ShapeKind? = nil,
+        componentID: UUID? = nil,
         children: [Layer] = []
     ) {
         self.id = id
@@ -298,8 +302,12 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
         self.polygon = polygon
         self.mask = mask
         self.clipShape = clipShape
+        self.componentID = componentID
         self.children = children
     }
+
+    /// True when this layer is an instance of a reusable component.
+    public var isComponentInstance: Bool { componentID != nil }
 
     public var isContainer: Bool {
         if kind.isGroupLike { return true }

@@ -20,6 +20,7 @@ import WorkspaceEngine
 import BuildIntelligenceEngine
 import HandoffGeneratorEngine
 import UIQualityEngine
+import ComponentEngine
 
 // A dependency-free assertion harness so the engines can be verified with
 // `swift run VUACheck` on a machine that has no Xcode (no XCTest).
@@ -1045,6 +1046,137 @@ func runChecks() async {
         let clean = qa.assess(Document(roots: [goodText]))
         c.check("scores ordering", clean.scores.overall > noisyReport.scores.overall)
         c.check("grade mapping", QualityScores.grade(95) == "A" && QualityScores.grade(40) == "E")
+    }
+
+    // MARK: Phase 15 — Component System
+    do {
+        // Build a master from two real layers; instance must reference it.
+        let label = Layer(name: "Title", kind: .label,
+                          frame: VRect(x: 10, y: 10, width: 80, height: 18), text: "Hi")
+        let panel = Layer(name: "Card", kind: .panel,
+                          frame: VRect(x: 0, y: 0, width: 120, height: 60),
+                          style: LayerStyle(backgroundColor: VColor(hex: "#2C2C2E"), cornerRadius: 10))
+        let (component, instance) = try ComponentEngine.makeComponent(named: "BadgeCard", from: [panel, label])
+        c.check("component creation", component.name == "BadgeCard")
+        c.check("component master has children", component.master.children.count == 2)
+        c.check("instance references master", instance.componentID == component.id)
+        c.check("instance body cloned", instance.children.count == 2)
+        c.check("instance child ids unique vs master",
+                Set(instance.children.map { $0.id }).isDisjoint(with: Set(component.master.children.map { $0.id })))
+
+        // Propagate master edits to instances.
+        var doc = Document(roots: [instance], components: [component])
+        var edited = component
+        edited.master.children[0] = Layer(name: "BG", kind: .panel,
+            frame: VRect(x: 0, y: 0, width: 200, height: 100),
+            style: LayerStyle(backgroundColor: VColor(hex: "#FF3B30")))
+        doc.components[0] = edited
+        let propagated = ComponentEngine.propagateMaster(edited, in: &doc.roots)
+        c.check("master propagates to instances", propagated == 1)
+        // Master still has 2 children (we replaced child[0], didn't remove child[1]).
+        c.check("instance body now matches master child count",
+                doc.roots[0].children.count == edited.master.children.count)
+        // Master frame is unchanged from creation (bounding box at make-time).
+        c.check("instance frame syncs to master size",
+                doc.roots[0].frame.size == edited.master.frame.size)
+
+        // Detach stops propagation.
+        let id = doc.roots[0].id
+        _ = ComponentEngine.detach(id, in: &doc.roots)
+        c.check("detach removes link", doc.roots[0].componentID == nil)
+        let propagated2 = ComponentEngine.propagateMaster(edited, in: &doc.roots)
+        c.check("detached instance not re-synced", propagated2 == 0)
+
+        // Cycle detection: making a component reference itself is rejected.
+        let selfCycle = ComponentEngine.wouldCreateCycle(insertingMaster: component.id,
+                                                        intoMaster: component.id,
+                                                        components: [component])
+        c.check("self-cycle detected", selfCycle)
+
+        // Indirect cycle: component A contains an instance of B, then B tries
+        // to contain A.
+        let bChild = Layer(name: "Stub", kind: .label, frame: VRect(x: 0, y: 0, width: 20, height: 20))
+        let (compB, _) = try ComponentEngine.makeComponent(named: "B", from: [bChild])
+        // Place an instance of A inside B's master.
+        var compBWithA = compB
+        compBWithA.master.children.append(ComponentEngine.makeInstance(of: component, at: .zero))
+        let cycle = ComponentEngine.wouldCreateCycle(
+            insertingMaster: compBWithA.id, intoMaster: component.id,
+            components: [component, compBWithA])
+        c.check("indirect cycle detected", cycle)
+
+        // Missing master diagnostic.
+        let orphan = Layer(name: "Orphan", kind: .group,
+                           frame: VRect(x: 0, y: 0, width: 10, height: 10))
+        var orphanDoc = Document(roots: [orphan])
+        // Force a componentID pointing at nothing.
+        let fakeID = UUID()
+        orphanDoc.roots[0] = Layer(
+            id: orphan.id, name: orphan.name, kind: orphan.kind, frame: orphan.frame,
+            componentID: fakeID, children: orphan.children)
+        let diag = ComponentEngine.diagnose(orphanDoc)
+        c.check("missing master diagnostic", diag.contains { $0.code == .missingMaster })
+
+        // Document backwards-compat: a JSON without `components` decodes to [].
+        let oldJSON = #"""
+        {
+          "name": "Legacy",
+          "roots": [],
+          "assets": [],
+          "activeDevice": {"id":"00000000-0000-0000-0000-000000000001","name":"Mac","family":"mac","portraitSize":{"width":1280,"height":800},"scale":2,"supportsLandscape":false},
+          "activeOrientation": "portrait",
+          "codeGenTarget": "swiftUI",
+          "schemaVersion": 1
+        }
+        """#
+        let legacy = try JSONDecoder().decode(Document.self, from: oldJSON.data(using: .utf8)!)
+        c.check("legacy doc decodes with empty components", legacy.components.isEmpty)
+
+        // Round-trip: a doc with a component re-encodes and decodes losslessly.
+        let liveDoc = Document(name: "Live", roots: [instance], components: [component])
+        let encoded = try JSONEncoder().encode(liveDoc)
+        let decoded = try JSONDecoder().decode(Document.self, from: encoded)
+        c.check("component round-trip preserves count", decoded.components.count == 1)
+        c.check("component round-trip preserves id", decoded.components[0].id == component.id)
+        c.check("instance link survives round-trip",
+                decoded.roots[0].componentID == component.id)
+
+        // Codegen: produce a component struct + instance call.
+        let codeDoc = Document(name: "CodeGen", roots: [instance], components: [component])
+        let src = (try? CodeGenService().generate(codeDoc).contents) ?? ""
+        c.check("codegen emits component struct",
+                src.contains("struct \(component.generatedTypeName): View"))
+        c.check("codegen emits instance call",
+                src.contains("\(component.generatedTypeName)()"))
+        // Brace balance (cheap structural sanity).
+        c.check("codegen braces balanced",
+                src.filter { $0 == "{" }.count == src.filter { $0 == "}" }.count)
+
+        // Real swift build of an exported component-bearing doc.
+        let exDir = fm.temporaryDirectory.appendingPathComponent("vua-p15-export-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: exDir) }
+        let exResult = try ExportIntegrityPipeline().export(
+            document: codeDoc,
+            request: ExportRequest(destination: exDir, viewName: "ComponentDemo", includeControlsLibrary: false))
+        c.check("p15 export ok", !exResult.hasErrors)
+        let bp = Process()
+        bp.executableURL = URL(fileURLWithPath: "/usr/bin/env"); bp.arguments = ["swift", "build"]
+        bp.currentDirectoryURL = exDir
+        let bpipe = Pipe(); bp.standardOutput = bpipe; bp.standardError = bpipe
+        try bp.run(); bp.waitUntilExit()
+        if bp.terminationStatus != 0 {
+            let bout = String(data: bpipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            FileHandle.standardError.write(Data("p15 export build:\n\(bout)\n".utf8))
+        }
+        c.check("p15 exported component builds with swift build", bp.terminationStatus == 0)
+
+        // Cloning preserves componentID (so paste keeps the link).
+        let clone = LayerTree.cloneWithNewIDs(instance)
+        c.check("clone preserves componentID", clone.componentID == component.id)
+        c.check("clone has fresh id", clone.id != instance.id)
+    } catch {
+        FileHandle.standardError.write(Data("p15 exception: \(error)\n".utf8))
+        c.check("p15 exception", false)
     }
 
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")

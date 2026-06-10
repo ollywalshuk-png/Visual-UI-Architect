@@ -12,6 +12,8 @@ public struct Document: Codable, Hashable, Sendable {
     public var activeOrientation: DeviceProfile.Orientation
     /// Code-generation target for this document.
     public var codeGenTarget: CodeGenTarget
+    /// Reusable component library (Phase 15). Decodes to [] for older documents.
+    public var components: [Component]
     /// Schema version for forward-compatible migration.
     public var schemaVersion: Int
 
@@ -24,6 +26,7 @@ public struct Document: Codable, Hashable, Sendable {
         activeDevice: DeviceProfile = .mac,
         activeOrientation: DeviceProfile.Orientation = .portrait,
         codeGenTarget: CodeGenTarget = .swiftUI,
+        components: [Component] = [],
         schemaVersion: Int = Document.currentSchemaVersion
     ) {
         self.name = name
@@ -32,12 +35,32 @@ public struct Document: Codable, Hashable, Sendable {
         self.activeDevice = activeDevice
         self.activeOrientation = activeOrientation
         self.codeGenTarget = codeGenTarget
+        self.components = components
         self.schemaVersion = schemaVersion
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, roots, assets, activeDevice, activeOrientation, codeGenTarget, components, schemaVersion
+    }
+
+    /// Custom decoder so documents saved before Phase 15 (no `components` key)
+    /// still load — `components` defaults to empty.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        roots = try c.decode([Layer].self, forKey: .roots)
+        assets = try c.decode([Asset].self, forKey: .assets)
+        activeDevice = try c.decode(DeviceProfile.self, forKey: .activeDevice)
+        activeOrientation = try c.decode(DeviceProfile.Orientation.self, forKey: .activeOrientation)
+        codeGenTarget = try c.decode(CodeGenTarget.self, forKey: .codeGenTarget)
+        components = try c.decodeIfPresent([Component].self, forKey: .components) ?? []
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
     }
 
     public var canvasSize: VSize { activeDevice.size(for: activeOrientation) }
 
     public func asset(id: UUID) -> Asset? { assets.first { $0.id == id } }
+    public func component(id: UUID) -> Component? { components.first { $0.id == id } }
 }
 
 /// Supported code-generation targets. SwiftUI is implemented; the others are

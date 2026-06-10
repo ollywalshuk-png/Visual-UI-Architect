@@ -34,6 +34,7 @@ public extension LayerTree {
             polygon: layer.polygon,
             mask: layer.mask,
             clipShape: layer.clipShape,
+            componentID: layer.componentID,   // duplicating an instance keeps the ref
             children: layer.children.map { cloneWithNewIDs($0) })
     }
 

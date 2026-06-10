@@ -145,8 +145,22 @@ system keeps design and production-quality code in sync.
   screens. Produces 0–100 **scores with grades** (Design / Layout / Calm /
   Accessibility / Responsive + overall), top-five fixes, and per-finding
   recommendations with layer selection. Toolbar ▸ **Quality**.
+- **Phase 15 — Component system (done):** new **`ComponentEngine`** — real
+  reusable components, not presets. Create a master from the current selection,
+  insert instances, **detach** instances, and **propagate** master edits to
+  every instance with a single click. Detects **circular references** (direct
+  and indirect, via a forward-reachability walk), diagnoses missing masters,
+  duplicate names, and empty bodies. Cloning a layer preserves its
+  `componentID` so paste keeps the link. Documents save/load components inside
+  `.vuaproj`, with backwards-compatible decoding for older files (no
+  `components` key → empty array). Generated SwiftUI emits one
+  `<Name>ComponentView` struct per master and replaces instance bodies with a
+  single constructor call; the export pipeline `swift build`s the result so
+  components are proven portable. Sidebar tab **Components** lists masters
+  with instance counts, diagnostics, and inline actions
+  (insert / update-all / rename / delete).
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 215 checks).
+All engines compile and pass the verification harness (`swift run VUACheck`, 239 checks).
 
 ## Requirements
 

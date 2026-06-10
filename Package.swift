@@ -16,7 +16,7 @@ let package = Package(
             "LayerEngine", "CanvasEngine", "AssetEngine", "LayoutEngine",
             "ConstraintEngine", "ValidationEngine", "GitEngine",
             "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
-            "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine", "WorkspaceEngine",
+            "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine", "WorkspaceEngine", "ComponentEngine",
             "BuildIntelligenceEngine", "HandoffGeneratorEngine", "UIQualityEngine"
         ])
     ],
@@ -65,6 +65,9 @@ let package = Package(
         // Repo/workspace safety: resolve the right repo/app/target before writes.
         .target(name: "WorkspaceEngine", dependencies: ["VUACore", "GitEngine"]),
 
+        // Reusable components: masters, instances, propagation, detach.
+        .target(name: "ComponentEngine", dependencies: ["VUACore", "LayerEngine"]),
+
         // Build intelligence: toolchain/package diagnostics + failure explanation.
         .target(name: "BuildIntelligenceEngine", dependencies: ["VUACore"]),
 
@@ -96,7 +99,7 @@ let package = Package(
                 "GitEngine", "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
                 "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
                 "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine",
-                "UIQualityEngine"
+                "UIQualityEngine", "ComponentEngine"
             ]
         ),
 
@@ -108,7 +111,7 @@ let package = Package(
                 "ConstraintEngine", "LayoutEngine", "PreviewEngine", "AIEngine", "RepositoryEngine",
                 "AssetEngine", "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
                 "CanvasEngine", "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine",
-                "UIQualityEngine"
+                "UIQualityEngine", "ComponentEngine"
             ]
         ),
 

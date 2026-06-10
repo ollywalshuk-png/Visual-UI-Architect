@@ -25,7 +25,7 @@ rebuild app bundle → update README → commit when green.
 | 12 | Source / Asset / Layer hardening | ✅ done | HardeningValidator + SourceSafety preflight |
 | 13 | Handoff Generator (`HandoffGeneratorEngine`) | ✅ done | 7 modes, deterministic, dirty-state aware |
 | 14 | UI Quality Engine | ✅ done | density/spacing/contrast/a11y/noise scores + fixes |
-| 15 | Component System (`ComponentEngine`) | ⬜ planned | masters + instances + propagation |
+| 15 | Component System (`ComponentEngine`) | ✅ done | masters + instances + propagation + cycle detection |
 | 16 | Auto Layout / Responsive Layout | ⬜ planned | stacks/grids/breakpoints |
 | 17 | Design System Manager (`DesignSystemEngine`) | ⬜ planned | tokens + theme |
 | 18 | Interaction / Behaviour Engine (`UIBehaviourEngine`) | ⬜ planned | triggers/actions/bindings |

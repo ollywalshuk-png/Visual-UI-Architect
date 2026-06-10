@@ -48,6 +48,13 @@ public struct SwiftUIGenerator: CodeGenerator {
             b.line("}")   // close body
         }
         b.line("}")       // close struct
+
+        // Emit one reusable struct per component master (Phase 15).
+        for component in document.components {
+            b.line()
+            emitComponentStruct(component, into: &b, document: document)
+        }
+
         if includePreview {
             b.line()
             b.line("#Preview {")
@@ -76,6 +83,12 @@ public struct SwiftUIGenerator: CodeGenerator {
     }
 
     private func emitContent(_ layer: Layer, into b: inout SourceBuilder, document: Document) {
+        // Component instance: collapse to a single component-view call (the
+        // child clones exist for the editor; in code we reuse the master).
+        if let cid = layer.componentID, let component = document.component(id: cid) {
+            b.line("\(component.generatedTypeName)()")
+            return
+        }
         switch layer.kind {
         case .container, .panel, .background, .group:
             // Asset-backed panels/backgrounds emit a real Image so the export
@@ -168,9 +181,37 @@ public struct SwiftUIGenerator: CodeGenerator {
 
     /// True when the document contains controls backed by the VUAControls library.
     private func usesControlLibrary(_ document: Document) -> Bool {
-        document.allLayers.contains {
-            switch $0.kind { case .knob, .fader, .meter, .control: return true; default: return false }
+        if document.allLayers.contains(where: { isControl($0.kind) }) { return true }
+        // Component masters can also drag in the controls library.
+        return document.components.contains { component in
+            component.master.flattened().contains { isControl($0.kind) }
         }
+    }
+
+    private func isControl(_ kind: LayerKind) -> Bool {
+        switch kind { case .knob, .fader, .meter, .control: return true; default: return false }
+    }
+
+    /// Emits `struct <Name>ComponentView: View { var body: some View { … } }`
+    /// for one component master. The master is rendered as a top-leading ZStack
+    /// so embedded instance positions keep the same geometry as the canvas.
+    private func emitComponentStruct(_ component: Component, into b: inout SourceBuilder, document: Document) {
+        b.line("// MARK: Component — \(component.name)")
+        b.block("struct \(component.generatedTypeName): View {") { b in
+            b.block("var body: some View {") { b in
+                b.block("ZStack(alignment: .topLeading) {") { b in
+                    for child in component.master.children where child.isVisible {
+                        emit(child, into: &b, document: document)
+                    }
+                }
+                b.line("}")
+                b.indented { b in
+                    b.line(".frame(width: \(fmt(component.master.frame.width)), height: \(fmt(component.master.frame.height)), alignment: .topLeading)")
+                }
+            }
+            b.line("}")
+        }
+        b.line("}")
     }
 
     private func emitModifiers(_ layer: Layer, into b: inout SourceBuilder) {
