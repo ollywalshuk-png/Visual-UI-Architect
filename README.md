@@ -160,7 +160,20 @@ system keeps design and production-quality code in sync.
   with instance counts, diagnostics, and inline actions
   (insert / update-all / rename / delete).
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 239 checks).
+- **Phase 16 — Advanced control presets (done):** **250 first-class control
+  presets** — 50 each for knobs, faders, sliders, buttons, and switches —
+  built combinatorially from 10 named **style families** (Classic, Minimal
+  Flat, Modern Pro, Vintage, Neon, Glass, Pill, Mono, Danger, Success)
+  × 5 size/parameter variants per kind. Every preset has unique id + unique
+  name, real styling (background/accent/border/corner-radius/shadow/font
+  weight), and sensible default **AU parameter metadata** (id, range, unit,
+  default) for behaviour/binding work that follows. New sidebar tab
+  **Controls** with a segmented kind picker, a horizontally-scrollable
+  family filter, search across name/family/tags, and an adaptive grid of
+  **live SwiftUI thumbnails** (no PNG generation — the renderer that draws
+  the canvas draws the previews). Tap inserts at canvas centre.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 263 checks).
 
 ## Requirements
 

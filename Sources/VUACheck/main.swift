@@ -1179,6 +1179,66 @@ func runChecks() async {
         c.check("p15 exception", false)
     }
 
+    // MARK: Phase 16 — Advanced control presets
+    do {
+        let all = ControlPresetLibrary.all
+        c.check("control catalog total", all.count == 250)
+        c.check("control catalog has knobs", ControlPresetLibrary.presets(in: .knob).count == 50)
+        c.check("control catalog has faders", ControlPresetLibrary.presets(in: .fader).count == 50)
+        c.check("control catalog has sliders", ControlPresetLibrary.presets(in: .slider).count == 50)
+        c.check("control catalog has buttons", ControlPresetLibrary.presets(in: .button).count == 50)
+        c.check("control catalog has toggles", ControlPresetLibrary.presets(in: .toggle).count == 50)
+
+        // Unique ids and unique names.
+        c.check("control preset ids unique", Set(all.map { $0.id }).count == all.count)
+        c.check("control preset names unique", Set(all.map { $0.name }).count == all.count)
+
+        // Families: 10 named families per kind.
+        for k in ControlPresetKind.allCases {
+            c.check("families per \(k) == 10", ControlPresetLibrary.families(in: k).count == 10)
+        }
+
+        // Each preset produces a real, non-zero, correctly-kinded layer.
+        var samples: [Layer] = []
+        for preset in all {
+            let layer = preset.makeLayer(at: VPoint(x: 10, y: 20))
+            samples.append(layer)
+        }
+        c.check("layers non-zero size", samples.allSatisfy { $0.frame.width > 0 && $0.frame.height > 0 })
+        c.check("layer kinds match", zip(all, samples).allSatisfy { p, l in
+            switch (p.kind, l.kind) {
+            case (.knob, .knob), (.fader, .fader), (.slider, .slider),
+                 (.button, .button), (.toggle, .toggle): return true
+            default: return false
+            }
+        })
+        c.check("non-button presets carry metadata",
+                all.filter { $0.kind != .button }.allSatisfy { $0.metadata != nil })
+
+        // Search hits.
+        let danger = ControlPresetLibrary.search("danger", in: .button)
+        c.check("search by tag", danger.count == 5 && danger.allSatisfy { $0.tags.contains("danger") })
+        let cutoff = ControlPresetLibrary.search("cutoff", in: .knob)
+        c.check("search by name", cutoff.count == 10 && cutoff.allSatisfy { $0.name.contains("Cutoff") })
+
+        // End-to-end codegen sanity: a doc containing one of each kind generates
+        // SwiftUI that mentions every control type and balances braces.
+        let one = { (k: ControlPresetKind) -> Layer in
+            ControlPresetLibrary.presets(in: k).first!.makeLayer(at: .zero)
+        }
+        let mix = Document(name: "Mix", roots: [one(.knob), one(.fader), one(.slider), one(.button), one(.toggle)])
+        let src = (try? CodeGenService().generate(mix).contents) ?? ""
+        c.check("codegen knob view", src.contains("KnobView("))
+        c.check("codegen fader view", src.contains("FaderView("))
+        c.check("codegen button", src.contains("Button(action:"))
+        c.check("codegen toggle", src.contains("Toggle("))
+        c.check("codegen braces balanced",
+                src.filter { $0 == "{" }.count == src.filter { $0 == "}" }.count)
+
+        // Existing layout presets still load (regression guard).
+        c.check("layout preset library still loads", PresetLibrary.all.count > 0)
+    }
+
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")
     exit(c.failures == 0 ? 0 : 1)
 }

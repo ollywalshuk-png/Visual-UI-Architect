@@ -30,7 +30,7 @@ rebuild app bundle → update README → commit when green.
 | 17 | Design System Manager (`DesignSystemEngine`) | ⬜ planned | tokens + theme |
 | 18 | Interaction / Behaviour Engine (`UIBehaviourEngine`) | ⬜ planned | triggers/actions/bindings |
 | 19 | State Variant System | ⬜ planned | empty/loading/error/hover/disabled |
-| 20 | Preset expansion to 50+ | ⬜ planned | currently 23 |
+| 20 | Preset expansion to 50+ | ✅ done (P16) | 250 advanced control presets (50× knob/fader/slider/button/toggle) shipped in Phase 16 |
 | 21 | Target App Injection (`TargetAppInjectionEngine`) | ⬜ planned | inject into real repo |
 | 22 | Repository Intelligence | ⬜ planned | view/asset/dependency graphs |
 | 23 | Advanced SwiftUI round-trip | ⬜ planned | state/nav/list/form parsing |

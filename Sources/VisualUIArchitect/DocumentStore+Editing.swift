@@ -218,4 +218,16 @@ extension DocumentStore {
         selection = [layer.id]
         repositoryStatus = "Inserted preset “\(preset.name)”."
     }
+
+    /// Inserts an advanced control preset (knob/fader/slider/button/toggle),
+    /// centered on the canvas with fresh ids.
+    func insertControlPreset(_ preset: ControlPreset) {
+        let canvas = document.canvasSize
+        let origin = VPoint(x: max(0, (canvas.width - preset.size.width) / 2),
+                            y: max(0, (canvas.height - preset.size.height) / 2))
+        let layer = LayerTree.cloneWithNewIDs(preset.makeLayer(at: origin))
+        mutate { LayerTree.insert(layer, into: &$0.roots, parentID: nil) }
+        selection = [layer.id]
+        repositoryStatus = "Inserted “\(preset.name)”."
+    }
 }
