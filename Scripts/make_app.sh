@@ -18,6 +18,9 @@ echo "▶ Assembling bundle…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/VisualUIArchitect"
+# Ensure the bundled binary is executable. SwiftPM's release binary may be
+# copied without the execute bit, which makes LaunchServices reject `open`.
+chmod +x "$APP/Contents/MacOS/VisualUIArchitect"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
