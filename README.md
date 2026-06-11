@@ -293,7 +293,13 @@ system keeps design and production-quality code in sync.
   shows token references on selected layers, global token edits preserve those
   references, and SwiftUI generation emits a `DesignTokens` namespace.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 410 checks).
+- **Phase 29 — Target app injection v2 (done):** `RepositoryEngine` now has a
+  target-app injection planner that selects a repo/file, previews partial
+  injection diffs, detects asset dependencies, blocks dirty repos and hash
+  mismatches unless confirmed, preserves marked source regions, reports
+  diagnostics, can run build validation, and returns a rollback plan.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 418 checks).
 
 ## Requirements
 
@@ -413,5 +419,5 @@ test fails if generated code ever stops compiling outside Visual UI Architect.
 
 ## Roadmap
 
-Next: target-app injection hardening, existing-app view graphs, UX polish,
-performance for large projects, and deployment/distribution readiness.
+Next: existing-app view graphs, UX polish, performance for large projects, and
+deployment/distribution readiness.

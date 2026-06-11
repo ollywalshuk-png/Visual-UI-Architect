@@ -1286,6 +1286,53 @@ func runChecks() async {
         let decodedTokenDoc = try JSONDecoder().decode(Document.self, from: tokenJSON)
         c.check("p28 tokens round-trip", decodedTokenDoc.designTokens.count == 3)
 
+        // Phase 29 — target app injection v2.
+        let injectDir = fm.temporaryDirectory.appendingPathComponent("vua-p29-\(UUID().uuidString)")
+        try fm.createDirectory(at: injectDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: injectDir) }
+        let target = injectDir.appendingPathComponent("Target.swift")
+        let targetSource = """
+        import SwiftUI
+        // keep app comment
+        // VUA:BEGIN-INJECTION
+        Text("Old")
+        // VUA:END-INJECTION
+        """
+        try targetSource.write(to: target, atomically: true, encoding: .utf8)
+        func p29git(_ args: [String]) {
+            let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            p.arguments = ["git"] + args; p.currentDirectoryURL = injectDir
+            p.standardOutput = Pipe(); p.standardError = Pipe()
+            try? p.run(); p.waitUntilExit()
+        }
+        p29git(["init", "-q"]); p29git(["add", "."])
+        p29git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"])
+        let generated = "Image(\"Logo\")\nText(\"New\")"
+        let previewInjection = TargetAppInjection.preview(.init(
+            repoRoot: injectDir, targetFile: "Target.swift", generatedSource: generated,
+            expectedHash: SourceSafety.hash(of: targetSource)))
+        c.check("p29 injection preview diff", previewInjection.previewDiff.contains("Text(\"New\")"))
+        let afterPreviewTarget = (try? String(contentsOf: target, encoding: .utf8)) ?? ""
+        c.check("p29 preview preserves comments", afterPreviewTarget.contains("// keep app comment"))
+        c.check("p29 asset dependencies", previewInjection.assetDependencies == ["Logo"])
+        c.check("p29 rollback plan", previewInjection.rollbackPlan.contains { $0.contains("git restore Target.swift") })
+        try "// dirty\n".data(using: .utf8)!.write(to: injectDir.appendingPathComponent("Dirty.swift"))
+        let dirtyBlocked = TargetAppInjection.preview(.init(
+            repoRoot: injectDir, targetFile: "Target.swift", generatedSource: generated,
+            expectedHash: SourceSafety.hash(of: targetSource)))
+        c.check("p29 dirty repo blocks", dirtyBlocked.diagnostics.contains { $0.code == .dirtyRepository })
+        try? fm.removeItem(at: injectDir.appendingPathComponent("Dirty.swift"))
+        let hashBlocked = TargetAppInjection.preview(.init(
+            repoRoot: injectDir, targetFile: "Target.swift", generatedSource: generated,
+            expectedHash: SourceSafety.hash(of: "stale"), allowDirtyRepo: true))
+        c.check("p29 hash mismatch blocks", hashBlocked.diagnostics.contains { $0.code == .hashMismatch })
+        let appliedInjection = TargetAppInjection.apply(.init(
+            repoRoot: injectDir, targetFile: "Target.swift", generatedSource: generated,
+            expectedHash: SourceSafety.hash(of: targetSource), allowDirtyRepo: true))
+        let injectedSource = (try? String(contentsOf: target, encoding: .utf8)) ?? ""
+        c.check("p29 apply writes target", appliedInjection.wroteFile && injectedSource.contains("Image(\"Logo\")"))
+        c.check("p29 git diff preview", appliedInjection.gitDiff.contains("Text(\"New\")"))
+
         // Real swift build of an exported component-bearing doc.
         let exDir = fm.temporaryDirectory.appendingPathComponent("vua-p15-export-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: exDir) }
