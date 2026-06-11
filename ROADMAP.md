@@ -60,7 +60,11 @@ rebuild app bundle → update README → commit when green.
 | P23 | Asset transform system | ✅ done | scale/flip/crop/blend/texture-hook metadata + inspector/codegen/diagnostics |
 | P24 | Raster drawing tool | ✅ done | non-destructive paint strokes + PNG export asset + diagnostics |
 | P25 | Vector / SVG drawing tool | ✅ done | vectorPath layer, anchors/handles, SwiftUI Path, SVG export + diagnostics |
-| P26 | Textures / Materials | 🔜 next | procedural materials, texture metadata, inspector/codegen fallbacks |
+| P26 | Advanced SwiftUI round trip | ✅ done | preview-only apply, partial-file diffs, line anchors, unsupported-region diagnostics, CRLF preservation |
+| P27 | Component variants & overrides | 🔜 next | variants, inherited values, local overrides, locked properties |
+| P28 | Design token system | ⬜ planned | colours, typography, spacing, radius, shadows, gradients, materials |
+| P29 | Target App Injection v2 | ⬜ planned | repo/file selection, injection preview, build validation, rollback |
+| P30 | Existing App View Graph | ⬜ planned | view/component/dependency graph, source links, search, diagnostics |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when
 the project was restored from a Google Drive zip export (Drive strips

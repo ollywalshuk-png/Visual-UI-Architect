@@ -221,6 +221,55 @@ func runChecks() async {
         c.check("pipeline succeeded", false)
     }
 
+    // MARK: Phase 26 — advanced SwiftUI round-trip
+    let roundTripDir = fm.temporaryDirectory.appendingPathComponent("vua-p26-\(UUID().uuidString)")
+    try? fm.createDirectory(at: roundTripDir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: roundTripDir) }
+    let roundTripFile = roundTripDir.appendingPathComponent("RoundTrip.swift")
+    let roundTripSource = """
+    import SwiftUI
+
+    struct RoundTrip: View {
+        var body: some View {
+            VStack {
+                // VUA_UNSUPPORTED: custom animation logic owned by app code
+                Text("Keep")
+                    .frame(width: 80, height: 20)
+                    .position(x: 40, y: 20)
+                    .accessibilityIdentifier("keepLabel")
+            }
+        }
+    }
+    """.replacingOccurrences(of: "\n", with: "\r\n")
+    try? roundTripSource.write(to: roundTripFile, atomically: true, encoding: .utf8)
+    let roundTripLayer = Layer(name: "Keep", kind: .label,
+                               frame: VRect(x: 20, y: 40, width: 90, height: 24),
+                               text: "Keep",
+                               binding: CodeBinding(filePath: "RoundTrip.swift", anchorID: "keepLabel"))
+    let roundTripDoc = Document(roots: [roundTripLayer])
+    if let preview = try? SafeApplyPipeline().preview(document: roundTripDoc, repoRoot: roundTripDir) {
+        let stillOriginal = (try? String(contentsOf: roundTripFile, encoding: .utf8)) ?? ""
+        c.check("p26 preview does not write", stillOriginal == roundTripSource)
+        c.check("p26 preview diff contains partial update", preview.previewOnly && preview.diff.contains("@@ line"))
+        c.check("p26 preview planned anchor line", preview.plannedChanges.contains { $0.contains("RoundTrip.swift:") && $0.contains("keepLabel") })
+        c.check("p26 unsupported region surfaced", preview.unsupportedRegions.contains { $0.contains("VUA_UNSUPPORTED") })
+    } else {
+        c.check("p26 preview does not write", false)
+        c.check("p26 preview diff contains partial update", false)
+        c.check("p26 preview planned anchor line", false)
+        c.check("p26 unsupported region surfaced", false)
+    }
+    if let applied = try? SafeApplyPipeline().apply(document: roundTripDoc, repoRoot: roundTripDir, runBuild: false) {
+        let updated = (try? String(contentsOf: roundTripFile, encoding: .utf8)) ?? ""
+        c.check("p26 apply writes changed region", applied.filesWritten == ["RoundTrip.swift"] && updated.contains(".position(x: 65, y: 52)"))
+        c.check("p26 preserves CRLF", updated.contains("\r\n"))
+        c.check("p26 preserves unsupported code", updated.contains("custom animation logic owned by app code"))
+    } else {
+        c.check("p26 apply writes changed region", false)
+        c.check("p26 preserves CRLF", false)
+        c.check("p26 preserves unsupported code", false)
+    }
+
     try? fm.removeItem(at: tmp)   // exit() skips defer; clean up explicitly.
 
     // MARK: Phase 3 — control metadata

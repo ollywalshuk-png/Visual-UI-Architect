@@ -15,6 +15,9 @@ public struct SafeApplyResult: Sendable {
     public var buildPassed: Bool
     public var buildOutput: String
     public var diff: String
+    public var previewOnly: Bool
+    public var plannedChanges: [String]
+    public var unsupportedRegions: [String]
 
     public var succeeded: Bool { blockedAt == nil }
     public var canCommit: Bool { succeeded && !filesWritten.isEmpty }
@@ -47,12 +50,24 @@ public struct SafeApplyPipeline {
     ///   - repoRoot: repository root (for resolving relative paths, build, diff).
     ///   - runBuild: run `swift build` after writing when the repo is a package.
     public func apply(document: Document, repoRoot: URL, runBuild: Bool) throws -> SafeApplyResult {
+        try run(document: document, repoRoot: repoRoot, runBuild: runBuild, previewOnly: false)
+    }
+
+    /// Computes the exact partial-file updates without writing them. The result
+    /// carries the same validation/preflight diagnostics and a unified preview
+    /// diff so users can review source changes before Apply.
+    public func preview(document: Document, repoRoot: URL) throws -> SafeApplyResult {
+        try run(document: document, repoRoot: repoRoot, runBuild: false, previewOnly: true)
+    }
+
+    private func run(document: Document, repoRoot: URL, runBuild: Bool, previewOnly: Bool) throws -> SafeApplyResult {
         // 1. Validate — block on errors before touching source.
         let report = validator.validate(document)
         if report.hasErrors {
             return SafeApplyResult(blockedAt: .validate, validation: report,
                                    filesWritten: [], buildRan: false, buildPassed: false,
-                                   buildOutput: "", diff: "")
+                                   buildOutput: "", diff: "", previewOnly: previewOnly,
+                                   plannedChanges: [], unsupportedRegions: [])
         }
 
         // 2. Group bound layers by source file: anchor → frame, and anchor →
@@ -73,12 +88,16 @@ public struct SafeApplyPipeline {
         let allFiles = Set(framesByFile.keys).union(imagesByFile.keys)
         let safety = SourceSafety()
         var preflightIssues: [ValidationIssue] = []
+        var unsupportedRegions: [String] = []
         for relPath in allFiles {
             let url = relPath.hasPrefix("/")
                 ? URL(fileURLWithPath: relPath)
                 : repoRoot.appendingPathComponent(relPath)
             let anchors = Array(Set((framesByFile[relPath] ?? [:]).keys).union((imagesByFile[relPath] ?? [:]).keys))
             let result = safety.preflight(fileURL: url, expectedAnchors: anchors)
+            unsupportedRegions.append(contentsOf: result.findings
+                .filter { $0.code == .unsupportedRegion }
+                .map(\.message))
             for finding in result.findings where finding.severity == .blocker {
                 preflightIssues.append(ValidationIssue(
                     severity: .error, category: .structure,
@@ -90,11 +109,14 @@ public struct SafeApplyPipeline {
             return SafeApplyResult(blockedAt: .preflight,
                                    validation: ValidationReport(issues: report.issues + preflightIssues),
                                    filesWritten: [], buildRan: false, buildPassed: false,
-                                   buildOutput: "", diff: "")
+                                   buildOutput: "", diff: "", previewOnly: previewOnly,
+                                   plannedChanges: [], unsupportedRegions: unsupportedRegions)
         }
 
         // 4. Write each file with source fidelity (positions then image names).
         var written: [String] = []
+        var previewDiffs: [String] = []
+        var plannedChanges: [String] = []
         for relPath in allFiles {
             let url = relPath.hasPrefix("/")
                 ? URL(fileURLWithPath: relPath)
@@ -113,10 +135,30 @@ public struct SafeApplyPipeline {
                 updated = try writer.updateImageNames(in: updated, changes: images)
             }
             if updated != source {
-                do { try updated.write(to: url, atomically: true, encoding: .utf8) }
-                catch { throw SafeApplyError.writeFailed(relPath) }
-                written.append(relPath)
+                updated = Self.preserveLineEndings(from: source, in: updated)
+                let changedAnchors = Array(Set((framesByFile[relPath] ?? [:]).keys)
+                    .union((imagesByFile[relPath] ?? [:]).keys)).sorted()
+                plannedChanges.append(contentsOf: changedAnchors.map { anchor in
+                    if let line = SourceSafety.lineNumber(of: anchor, in: source) {
+                        return "\(relPath):\(line) \(anchor)"
+                    }
+                    return "\(relPath) \(anchor)"
+                })
+                previewDiffs.append(Self.unifiedDiff(old: source, new: updated, filePath: relPath))
+                if !previewOnly {
+                    do { try updated.write(to: url, atomically: true, encoding: .utf8) }
+                    catch { throw SafeApplyError.writeFailed(relPath) }
+                    written.append(relPath)
+                }
             }
+        }
+
+        if previewOnly {
+            return SafeApplyResult(blockedAt: nil, validation: report,
+                                   filesWritten: [], buildRan: false, buildPassed: true,
+                                   buildOutput: "", diff: previewDiffs.joined(separator: "\n"),
+                                   previewOnly: true, plannedChanges: plannedChanges,
+                                   unsupportedRegions: unsupportedRegions)
         }
 
         // 4. Build (optional, only for SwiftPM packages).
@@ -129,7 +171,8 @@ public struct SafeApplyPipeline {
             if !buildPassed {
                 return SafeApplyResult(blockedAt: .build, validation: report,
                                        filesWritten: written, buildRan: true, buildPassed: false,
-                                       buildOutput: buildOutput, diff: "")
+                                       buildOutput: buildOutput, diff: "", previewOnly: false,
+                                       plannedChanges: plannedChanges, unsupportedRegions: unsupportedRegions)
             }
         }
 
@@ -140,7 +183,29 @@ public struct SafeApplyPipeline {
 
         return SafeApplyResult(blockedAt: nil, validation: report,
                                filesWritten: written, buildRan: buildRan, buildPassed: buildPassed,
-                               buildOutput: buildOutput, diff: diff)
+                               buildOutput: buildOutput, diff: diff.isEmpty ? previewDiffs.joined(separator: "\n") : diff,
+                               previewOnly: false, plannedChanges: plannedChanges,
+                               unsupportedRegions: unsupportedRegions)
+    }
+
+    private static func preserveLineEndings(from original: String, in updated: String) -> String {
+        original.contains("\r\n") ? updated.replacingOccurrences(of: "\n", with: "\r\n") : updated
+    }
+
+    private static func unifiedDiff(old: String, new: String, filePath: String) -> String {
+        let oldLines = old.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let newLines = new.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var out = ["--- a/\(filePath)", "+++ b/\(filePath)"]
+        let maxCount = max(oldLines.count, newLines.count)
+        for i in 0..<maxCount {
+            let lhs = i < oldLines.count ? oldLines[i] : nil
+            let rhs = i < newLines.count ? newLines[i] : nil
+            guard lhs != rhs else { continue }
+            out.append("@@ line \(i + 1) @@")
+            if let lhs { out.append("-\(lhs)") }
+            if let rhs { out.append("+\(rhs)") }
+        }
+        return out.count > 2 ? out.joined(separator: "\n") : ""
     }
 
     private func runSwiftBuild(in root: URL) -> (ok: Bool, output: String) {

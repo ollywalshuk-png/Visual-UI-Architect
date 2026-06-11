@@ -274,7 +274,14 @@ system keeps design and production-quality code in sync.
   markup. Diagnostics cover empty/invalid paths, unsupported SVG commands,
   paths outside the canvas, and missing fill/stroke.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 387 checks).
+- **Phase 26 — Advanced SwiftUI round trip (done):** apply-to-source now has a
+  preview-only path that computes partial-file updates before writing. The
+  safe-apply result lists planned anchors with source lines, reports unsupported
+  source regions that will be preserved, keeps CRLF formatting intact, preserves
+  comments and custom developer code outside changed modifier calls, and shows a
+  focused unified diff even outside git-backed repositories.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 394 checks).
 
 ## Requirements
 
@@ -347,7 +354,7 @@ In the app, switch the sidebar to **Repository**:
 1. **Open Repo** (a folder) or **Open File** (a `.swift` view).
 2. Pick a SwiftUI view — it's parsed into editable layers on the canvas.
 3. Edit visually (move/resize/restyle).
-4. **Apply to Source** → *Apply* (validate + write + diff) or *Safe Apply* (also runs `swift build`).
+4. **Apply to Source** → *Preview Changes*, *Apply* (validate + write + diff), or *Safe Apply* (also runs `swift build`).
 5. Review the result sheet (stages, git diff, build output), then commit when ready.
 
 Editing the file externally (e.g. in Xcode) refreshes the canvas automatically.
@@ -394,7 +401,6 @@ test fails if generated code ever stops compiling outside Visual UI Architect.
 
 ## Roadmap
 
-Next: richer write-back (style/text/structural inserts), navigation parsing,
-relative (layer-to-layer) constraints in the editor, device chrome frames,
-**MIDI CC / automation binding** for AU parameters, an Xcode `.xcassets`
-export route, additional code-gen targets, and a plugin API.
+Next: component variants/overrides, reusable design tokens, target-app
+injection hardening, existing-app view graphs, UX polish, performance for large
+projects, and deployment/distribution readiness.

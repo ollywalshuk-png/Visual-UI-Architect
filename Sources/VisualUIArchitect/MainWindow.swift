@@ -114,6 +114,13 @@ struct MainWindow: View {
         }
     }
 
+    private func previewApply() {
+        if let result = store.previewApplyToSource() {
+            applyResult = result
+            showApplyResult = true
+        }
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
@@ -183,6 +190,7 @@ struct MainWindow: View {
                 .help("UI quality: density, spacing, contrast, accessibility, noise scores")
 
             Menu {
+                Button("Preview Changes") { previewApply() }
                 Button("Apply (validate + write + diff)") { runApply(build: false) }
                 Button("Safe Apply (+ swift build)") { runApply(build: true) }
             } label: {

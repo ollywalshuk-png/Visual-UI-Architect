@@ -71,6 +71,32 @@ extension DocumentStore {
 
     // MARK: - Apply to source
 
+    func previewApplyToSource() -> SafeApplyResult? {
+        guard let root = repositoryRoot else {
+            repositoryStatus = "Open a file or repository first."
+            return nil
+        }
+        guard ensureSafeToWrite() else { return nil }
+        if importedSourceChangedExternally {
+            repositoryStatus = "Preview blocked: \(openedFileName ?? "the source file") changed on disk since import. Re-import before applying."
+            return nil
+        }
+        if importedSourcePath != nil && importedSourceHasAnchors == false {
+            repositoryStatus = "Preview blocked: this UI was imported as editable temporary layers because the source has no anchors."
+            return nil
+        }
+        do {
+            let result = try SafeApplyPipeline().preview(document: document, repoRoot: root)
+            repositoryStatus = result.diff.isEmpty
+                ? "Preview found no source changes."
+                : "Preview ready: \(result.plannedChanges.count) anchored change(s)."
+            return result
+        } catch {
+            repositoryStatus = "Preview failed: \(error)"
+            return nil
+        }
+    }
+
     /// Writes the current bound-layer geometry back to source via the
     /// safe-apply pipeline (validate → write → build → diff).
     func applyToSource(runBuild: Bool) -> SafeApplyResult? {

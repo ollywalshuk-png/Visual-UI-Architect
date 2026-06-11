@@ -20,9 +20,31 @@ struct ApplyResultView: View {
 
             stages.padding()
 
+            if !result.plannedChanges.isEmpty || !result.unsupportedRegions.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    if !result.plannedChanges.isEmpty {
+                        Text("Planned Anchors").font(.headline)
+                        ForEach(result.plannedChanges, id: \.self) { change in
+                            Text(change).font(.system(.caption, design: .monospaced))
+                        }
+                    }
+                    if !result.unsupportedRegions.isEmpty {
+                        Text("Preserved Regions").font(.headline).padding(.top, 4)
+                        ForEach(result.unsupportedRegions, id: \.self) { region in
+                            Label(region, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+            }
+
             if !result.diff.isEmpty {
                 Divider()
-                Text("Diff").font(.headline).padding(.horizontal).padding(.top, 8)
+                Text(result.previewOnly ? "Preview Diff" : "Diff").font(.headline).padding(.horizontal).padding(.top, 8)
                 ScrollView { diffView.padding() }
             } else if result.buildRan && !result.buildPassed {
                 Divider()
@@ -50,7 +72,9 @@ struct ApplyResultView: View {
         case .validate: return "Blocked by validation"
         case .build: return "Blocked: build failed"
         case .some(let s): return "Blocked at \(s.rawValue)"
-        case nil: return result.filesWritten.isEmpty ? "No changes" : "Applied to source"
+        case nil:
+            if result.previewOnly { return result.diff.isEmpty ? "No changes" : "Preview ready" }
+            return result.filesWritten.isEmpty ? "No changes" : "Applied to source"
         }
     }
 
@@ -58,8 +82,10 @@ struct ApplyResultView: View {
         VStack(alignment: .leading, spacing: 6) {
             stageRow("Validate", passed: !result.validation.hasErrors,
                      detail: "\(result.validation.errorCount) error(s), \(result.validation.warningCount) warning(s)")
-            stageRow("Write", passed: result.blockedAt != .validate,
-                     detail: result.filesWritten.isEmpty ? "no files" : result.filesWritten.joined(separator: ", "))
+            stageRow(result.previewOnly ? "Preview" : "Write", passed: result.blockedAt != .validate,
+                     detail: result.previewOnly
+                        ? "\(result.plannedChanges.count) anchored change(s)"
+                        : (result.filesWritten.isEmpty ? "no files" : result.filesWritten.joined(separator: ", ")))
             stageRow("Build", passed: !result.buildRan || result.buildPassed,
                      detail: result.buildRan ? (result.buildPassed ? "passed" : "failed") : "skipped")
             stageRow("Diff", passed: true, detail: result.diff.isEmpty ? "none" : "\(result.diff.split(separator: "\n").count) lines")

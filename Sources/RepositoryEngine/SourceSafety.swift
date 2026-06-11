@@ -23,6 +23,8 @@ public struct SourcePreflight: Sendable {
             case tabIndentation
             case duplicateAnchors
             case missingAnchor
+            case unsupportedRegion
+            case missingLineAnchor
         }
         public let id = UUID()
         public var severity: Severity
@@ -136,6 +138,12 @@ public struct SourceSafety: Sendable {
             }
         }
 
+        for region in unsupportedRegions(in: source) {
+            findings.append(.init(
+                severity: .warning, code: .unsupportedRegion,
+                message: "\(fileName) contains unsupported SwiftUI region '\(region)' — it will be preserved and left untouched."))
+        }
+
         return findings
     }
 
@@ -155,5 +163,25 @@ public struct SourceSafety: Sendable {
             }
         }
         return counts
+    }
+
+    /// Developer-marked or importer-marked regions that the round-trip writer
+    /// must preserve exactly. Structural editing remains SwiftSyntax-based; this
+    /// line scan only surfaces diagnostics to the user.
+    public static func unsupportedRegions(in source: String) -> [String] {
+        let markers = ["VUA_UNSUPPORTED", "vua:unsupported", "UnsupportedSwiftUI"]
+        var regions: [String] = []
+        for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
+            guard markers.contains(where: { line.contains($0) }) else { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !regions.contains(trimmed) { regions.append(trimmed) }
+        }
+        return regions
+    }
+
+    public static func lineNumber(of anchor: String, in source: String) -> Int? {
+        let marker = ".accessibilityIdentifier(\"\(anchor)\")"
+        guard let range = source.range(of: marker) else { return nil }
+        return source[..<range.lowerBound].reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
     }
 }
