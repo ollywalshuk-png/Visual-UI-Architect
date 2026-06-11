@@ -12,6 +12,13 @@ public struct RepositoryFile: Identifiable, Hashable, Sendable {
     public var role: Role
     /// View type names found in a SwiftUI source file.
     public var viewNames: [String]
+
+    public init(relativePath: String, absolutePath: String, role: Role, viewNames: [String]) {
+        self.relativePath = relativePath
+        self.absolutePath = absolutePath
+        self.role = role
+        self.viewNames = viewNames
+    }
 }
 
 /// Scans a repository directory for Swift sources (classifying SwiftUI view

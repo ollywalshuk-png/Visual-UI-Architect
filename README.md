@@ -299,7 +299,13 @@ system keeps design and production-quality code in sync.
   mismatches unless confirmed, preserves marked source regions, reports
   diagnostics, can run build validation, and returns a rollback plan.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 418 checks).
+- **Phase 30 — Existing app view graph (done):** repositories now build a
+  navigable graph of SwiftUI views, component masters, and imported-module
+  dependencies. The Graph sidebar supports search, diagnostics, source-file
+  links, and click-to-open behavior for view nodes so imported apps can be
+  explored from app → screen → component/dependency.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 425 checks).
 
 ## Requirements
 
@@ -419,5 +425,5 @@ test fails if generated code ever stops compiling outside Visual UI Architect.
 
 ## Roadmap
 
-Next: existing-app view graphs, UX polish, performance for large projects, and
-deployment/distribution readiness.
+Next: UX polish, performance for large projects, and deployment/distribution
+readiness.

@@ -1333,6 +1333,41 @@ func runChecks() async {
         c.check("p29 apply writes target", appliedInjection.wroteFile && injectedSource.contains("Image(\"Logo\")"))
         c.check("p29 git diff preview", appliedInjection.gitDiff.contains("Text(\"New\")"))
 
+        // Phase 30 — existing app view graph.
+        let graphDir = fm.temporaryDirectory.appendingPathComponent("vua-p30-\(UUID().uuidString)")
+        try fm.createDirectory(at: graphDir.appendingPathComponent("Sources/App"), withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: graphDir) }
+        let dashboardSource = """
+        import SwiftUI
+        import Charts
+        struct Dashboard: View {
+            var body: some View { Settings() }
+        }
+        """
+        let settingsSource = """
+        import SwiftUI
+        struct Settings: View {
+            var body: some View { Text("Settings") }
+        }
+        """
+        try dashboardSource.write(to: graphDir.appendingPathComponent("Sources/App/Dashboard.swift"), atomically: true, encoding: .utf8)
+        try settingsSource.write(to: graphDir.appendingPathComponent("Sources/App/Settings.swift"), atomically: true, encoding: .utf8)
+        let graphFiles = RepositoryScanner(root: graphDir).scan()
+        let graphComponent = Component(name: "PrimaryButton",
+                                       master: Layer(name: "PrimaryButton", kind: .group,
+                                                     frame: VRect(x: 0, y: 0, width: 120, height: 44)))
+        let graph = ExistingAppViewGraphBuilder.build(repoRoot: graphDir, files: graphFiles,
+                                                      document: Document(components: [graphComponent]))
+        c.check("p30 view graph nodes", graph.nodes.contains { $0.title == "Dashboard" }
+                && graph.nodes.contains { $0.title == "Settings" })
+        c.check("p30 hierarchy edge", graph.edges.contains { $0.from == "view:Dashboard" && $0.to == "view:Settings" && $0.kind == .hierarchy })
+        c.check("p30 dependency graph", graph.nodes.contains { $0.title == "Charts" && $0.kind == .dependency })
+        c.check("p30 component graph", graph.nodes.contains { $0.title == "PrimaryButton" && $0.kind == .component })
+        c.check("p30 source link", graph.sourceFile(for: "view:Dashboard")?.hasSuffix("Dashboard.swift") == true)
+        c.check("p30 search", graph.search("settings").contains { $0.title == "Settings" })
+        let emptyGraph = ExistingAppViewGraphBuilder.build(repoRoot: graphDir, files: [], document: nil)
+        c.check("p30 graph diagnostics", emptyGraph.diagnostics.contains { $0.message.contains("No SwiftUI") })
+
         // Real swift build of an exported component-bearing doc.
         let exDir = fm.temporaryDirectory.appendingPathComponent("vua-p15-export-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: exDir) }

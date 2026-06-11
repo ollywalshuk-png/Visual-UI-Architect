@@ -30,6 +30,7 @@ struct MainWindow: View {
         case controlAssets = "Control Assets"
         case components = "Components"
         case tokens = "Tokens"
+        case graph = "Graph"
         case repo = "Repository"
     }
 
@@ -51,6 +52,7 @@ struct MainWindow: View {
                 case .controlAssets: ControlAssetsBrowserView()
                 case .components: ComponentsBrowserView()
                 case .tokens: DesignTokenBrowserView()
+                case .graph: ExistingAppGraphView()
                 case .repo: RepositoryBrowserView()
                 }
             }

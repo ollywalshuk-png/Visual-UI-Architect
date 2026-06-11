@@ -64,7 +64,7 @@ rebuild app bundle → update README → commit when green.
 | P27 | Component variants & overrides | ✅ done | variants, inherited values, local overrides, locked properties, variant-aware codegen |
 | P28 | Design token system | ✅ done | colours, typography, spacing, radius, shadows, gradients, materials + token-aware codegen |
 | P29 | Target App Injection v2 | ✅ done | repo/file selection, injection preview, dirty/hash blocks, asset detection, rollback |
-| P30 | Existing App View Graph | 🔜 next | view/component/dependency graph, source links, search, diagnostics |
+| P30 | Existing App View Graph | ✅ done | view/component/dependency graph, source links, search, diagnostics |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when
 the project was restored from a Google Drive zip export (Drive strips
