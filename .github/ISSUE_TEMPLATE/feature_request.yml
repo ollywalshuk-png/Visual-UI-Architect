@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest a focused improvement for Visual UI Architect.
+title: "Feature: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow
+      description: What user workflow or developer task would this improve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful version of the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Source safety and build impact
+      description: Does this touch repository import, apply-to-source, generated code, persistence, or export?
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
