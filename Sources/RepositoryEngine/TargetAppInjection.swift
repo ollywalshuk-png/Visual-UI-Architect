@@ -23,6 +23,7 @@ public enum TargetAppInjection {
     }
 
     public struct Result: Sendable {
+        public enum ReplacementMode: String, Sendable { case markerRegion, fullFile }
         public var targetURL: URL
         public var previewDiff: String
         public var gitDiff: String
@@ -33,8 +34,13 @@ public enum TargetAppInjection {
         public var buildOutput: String
         public var rollbackPlan: [String]
         public var wroteFile: Bool
+        public var replacementMode: ReplacementMode
+        public var changedLineCount: Int
 
         public var hasBlocker: Bool { diagnostics.contains { $0.severity == .blocker } }
+        public var summary: String {
+            "\(replacementMode == .markerRegion ? "Marker-region" : "Full-file") injection, \(changedLineCount) changed line(s), \(assetDependencies.count) asset dependency(ies)."
+        }
     }
 
     public struct Diagnostic: Hashable, Sendable, Identifiable {
@@ -90,13 +96,17 @@ public enum TargetAppInjection {
             }
         }
 
+        let hasMarkers = original.contains("// VUA:BEGIN-INJECTION") && original.contains("// VUA:END-INJECTION")
         let injected = replaceInjectionRegion(in: original, with: request.generatedSource)
-        if !original.isEmpty, injected == original, !original.contains("// VUA:BEGIN-INJECTION") {
+        if !original.isEmpty, injected == original, !hasMarkers {
             diagnostics.append(.init(severity: .warning, code: .noInjectionMarker,
                                      message: "No VUA injection markers found; generated source will replace the full target file."))
         }
-        let finalSource = original.contains("// VUA:BEGIN-INJECTION") ? injected : request.generatedSource
+        let finalSource = hasMarkers ? injected : request.generatedSource
         let previewDiff = unifiedDiff(old: original, new: finalSource, filePath: request.targetFile)
+        let changedLineCount = previewDiff.split(separator: "\n").filter {
+            ($0.hasPrefix("+") && !$0.hasPrefix("+++")) || ($0.hasPrefix("-") && !$0.hasPrefix("---"))
+        }.count
         let assets = assetDependencies(in: request.generatedSource)
         var buildRan = false
         var buildPassed = true
@@ -125,7 +135,9 @@ public enum TargetAppInjection {
                       assetDependencies: assets, diagnostics: diagnostics,
                       buildRan: buildRan, buildPassed: buildPassed, buildOutput: buildOutput,
                       rollbackPlan: rollbackPlan(for: request.targetFile, repoRoot: request.repoRoot),
-                      wroteFile: write && diagnostics.allSatisfy { $0.severity != .blocker })
+                      wroteFile: write && diagnostics.allSatisfy { $0.severity != .blocker },
+                      replacementMode: hasMarkers ? .markerRegion : .fullFile,
+                      changedLineCount: changedLineCount)
     }
 
     private static func replaceInjectionRegion(in source: String, with generated: String) -> String {

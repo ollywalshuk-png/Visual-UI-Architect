@@ -25,16 +25,19 @@ struct ExistingAppGraphView: View {
             Divider()
             if let graph {
                 List {
+                    Section("Summary") {
+                        metrics(graph)
+                    }
                     Section("Hierarchy") {
-                        ForEach(graph.search(query).filter { $0.kind == .app || $0.kind == .view }) { node in row(node) }
+                        ForEach(graph.search(query).filter { $0.kind == .app || $0.kind == .view }) { node in row(node, graph: graph) }
                     }
                     let components = graph.search(query).filter { $0.kind == .component }
                     if !components.isEmpty {
-                        Section("Components") { ForEach(components) { row($0) } }
+                        Section("Components") { ForEach(components) { row($0, graph: graph) } }
                     }
                     let deps = graph.search(query).filter { $0.kind == .dependency }
                     if !deps.isEmpty {
-                        Section("Dependencies") { ForEach(deps) { row($0) } }
+                        Section("Dependencies") { ForEach(deps) { row($0, graph: graph) } }
                     }
                     if !graph.diagnostics.isEmpty {
                         Section("Diagnostics") {
@@ -57,13 +60,37 @@ struct ExistingAppGraphView: View {
         }
     }
 
-    private func row(_ node: ExistingAppViewGraph.Node) -> some View {
-        HStack(spacing: 8) {
+    private func metrics(_ graph: ExistingAppViewGraph) -> some View {
+        HStack {
+            metric("Views", graph.stats.viewCount)
+            metric("Components", graph.stats.componentCount)
+            metric("Deps", graph.stats.dependencyCount)
+            metric("Edges", graph.stats.edgeCount)
+        }
+    }
+
+    private func metric(_ label: String, _ value: Int) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("\(value)").font(.headline)
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func row(_ node: ExistingAppViewGraph.Node, graph: ExistingAppViewGraph) -> some View {
+        let outgoing = graph.outgoing(from: node.id)
+        return HStack(spacing: 8) {
             Image(systemName: icon(node.kind)).foregroundStyle(.secondary).frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(node.title).lineLimit(1)
                 if let file = node.sourceFile {
                     Text(file).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                if !outgoing.isEmpty {
+                    Text("Links: \(outgoing.prefix(4).map(\.title).joined(separator: ", "))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
             Spacer()

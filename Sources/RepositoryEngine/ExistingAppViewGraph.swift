@@ -28,6 +28,20 @@ public struct ExistingAppViewGraph: Sendable, Hashable {
     public var edges: [Edge]
     public var diagnostics: [Diagnostic]
 
+    public struct Stats: Sendable, Hashable {
+        public var viewCount: Int
+        public var componentCount: Int
+        public var dependencyCount: Int
+        public var edgeCount: Int
+    }
+
+    public var stats: Stats {
+        Stats(viewCount: nodes.filter { $0.kind == .view }.count,
+              componentCount: nodes.filter { $0.kind == .component }.count,
+              dependencyCount: nodes.filter { $0.kind == .dependency }.count,
+              edgeCount: edges.count)
+    }
+
     public func search(_ query: String) -> [Node] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return nodes }
@@ -38,6 +52,11 @@ public struct ExistingAppViewGraph: Sendable, Hashable {
 
     public func sourceFile(for nodeID: String) -> String? {
         nodes.first { $0.id == nodeID }?.sourceFile
+    }
+
+    public func outgoing(from nodeID: String) -> [Node] {
+        let targets = Set(edges.filter { $0.from == nodeID }.map(\.to))
+        return nodes.filter { targets.contains($0.id) }.sorted { $0.title < $1.title }
     }
 }
 
@@ -92,6 +111,10 @@ public enum ExistingAppViewGraphBuilder {
 
         if viewFiles.isEmpty {
             diagnostics.append(.init(severity: .info, message: "No SwiftUI view files found."))
+        }
+        if nodes.count > 250 || edges.count > 500 {
+            diagnostics.append(.init(severity: .warning,
+                                     message: "Large graph: \(nodes.count) nodes and \(edges.count) edges. Use search to narrow navigation."))
         }
         return ExistingAppViewGraph(nodes: nodes, edges: Array(Set(edges)), diagnostics: diagnostics)
     }

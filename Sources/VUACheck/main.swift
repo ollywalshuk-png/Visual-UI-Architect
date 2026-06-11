@@ -1312,6 +1312,8 @@ func runChecks() async {
             repoRoot: injectDir, targetFile: "Target.swift", generatedSource: generated,
             expectedHash: SourceSafety.hash(of: targetSource)))
         c.check("p29 injection preview diff", previewInjection.previewDiff.contains("Text(\"New\")"))
+        c.check("p29 injection summary", previewInjection.summary.contains("Marker-region") &&
+                previewInjection.changedLineCount > 0)
         let afterPreviewTarget = (try? String(contentsOf: target, encoding: .utf8)) ?? ""
         c.check("p29 preview preserves comments", afterPreviewTarget.contains("// keep app comment"))
         c.check("p29 asset dependencies", previewInjection.assetDependencies == ["Logo"])
@@ -1365,8 +1367,21 @@ func runChecks() async {
         c.check("p30 component graph", graph.nodes.contains { $0.title == "PrimaryButton" && $0.kind == .component })
         c.check("p30 source link", graph.sourceFile(for: "view:Dashboard")?.hasSuffix("Dashboard.swift") == true)
         c.check("p30 search", graph.search("settings").contains { $0.title == "Settings" })
+        c.check("p30 graph stats", graph.stats.viewCount == 2 && graph.stats.dependencyCount == 1 && graph.stats.edgeCount > 0)
+        c.check("p30 outgoing links", graph.outgoing(from: "view:Dashboard").contains { $0.title == "Settings" })
         let emptyGraph = ExistingAppViewGraphBuilder.build(repoRoot: graphDir, files: [], document: nil)
         c.check("p30 graph diagnostics", emptyGraph.diagnostics.contains { $0.message.contains("No SwiftUI") })
+        let manyFiles = (0..<260).map {
+            RepositoryFile(relativePath: "V\($0).swift", absolutePath: graphDir.appendingPathComponent("Sources/App/Settings.swift").path,
+                           role: .swiftUIView, viewNames: ["V\($0)"])
+        }
+        let largeGraph = ExistingAppViewGraphBuilder.build(repoRoot: graphDir, files: manyFiles, document: nil)
+        c.check("p30 large graph warning", largeGraph.diagnostics.contains { $0.message.contains("Large graph") })
+
+        // UX/performance/deployment follow-up.
+        let deployReport = DeploymentReadiness.inspect(projectRoot: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+        c.check("deployment readiness sees package", !deployReport.findings.contains { $0.message.contains("Package.swift is missing") })
+        c.check("deployment readiness actionable", deployReport.findings.contains { $0.message.contains("make_app.sh") || $0.message.contains("app bundle") || $0.message.contains("Deployment readiness") })
 
         // Real swift build of an exported component-bearing doc.
         let exDir = fm.temporaryDirectory.appendingPathComponent("vua-p15-export-\(UUID().uuidString)")

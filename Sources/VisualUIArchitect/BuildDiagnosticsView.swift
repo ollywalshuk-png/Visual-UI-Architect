@@ -34,6 +34,7 @@ struct BuildDiagnosticsView: View {
                         contextSection(ctx)
                         pipelineSection
                         diagnosticsSection(ctx)
+                        deploymentSection(ctx)
                     }
                     .padding()
                 }
@@ -47,6 +48,22 @@ struct BuildDiagnosticsView: View {
         }
         .frame(minWidth: 560, minHeight: 460)
         .onAppear { store.refreshBuildContext(kind: kind) }
+    }
+
+    private func deploymentSection(_ ctx: BuildContext) -> some View {
+        let report = DeploymentReadiness.inspect(projectRoot: ctx.workingDirectory)
+        return GroupBox("Deployment Readiness") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(report.findings) { finding in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: deployIcon(finding.severity))
+                            .foregroundStyle(deployColor(finding.severity))
+                        Text(finding.message)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private func contextSection(_ ctx: BuildContext) -> some View {
@@ -131,6 +148,22 @@ struct BuildDiagnosticsView: View {
         case .info: return .blue
         case .warning: return .orange
         case .error: return .red
+        }
+    }
+
+    private func deployIcon(_ s: DeploymentReadinessReport.Finding.Severity) -> String {
+        switch s {
+        case .info: return "info.circle"
+        case .warning: return "exclamationmark.triangle"
+        case .blocker: return "xmark.octagon"
+        }
+    }
+
+    private func deployColor(_ s: DeploymentReadinessReport.Finding.Severity) -> Color {
+        switch s {
+        case .info: return .blue
+        case .warning: return .orange
+        case .blocker: return .red
         }
     }
 }

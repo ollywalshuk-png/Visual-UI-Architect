@@ -305,7 +305,13 @@ system keeps design and production-quality code in sync.
   links, and click-to-open behavior for view nodes so imported apps can be
   explored from app → screen → component/dependency.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 425 checks).
+- **Phase 31 — UX/performance/deployment polish (done):** the Phase 29/30
+  surfaces now expose clearer injection summaries, changed-line counts, graph
+  metrics, outgoing links, and large-graph warnings. Build Diagnostics now
+  includes app-bundle deployment readiness checks for the SwiftPM package,
+  bundle script, Info.plist, and executable binary.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 431 checks).
 
 ## Requirements
 
