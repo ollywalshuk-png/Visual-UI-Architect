@@ -342,6 +342,7 @@ final class DocumentStore: ObservableObject {
         case .panel, .container, .background, .group: return VSize(width: 240, height: 160)
         case .shape(let s): return s == .divider ? VSize(width: 200, height: 2) : VSize(width: 120, height: 80)
         case .line: return VSize(width: 160, height: 2)
+        case .vectorPath: return VSize(width: 160, height: 120)
         case .polygon: return VSize(width: 90, height: 90)
         case .gradient: return VSize(width: 240, height: 120)
         case .mask: return VSize(width: 120, height: 120)
@@ -360,6 +361,8 @@ final class DocumentStore: ObservableObject {
             return LayerStyle(foregroundColor: .white, fontSize: 15)
         case .knob, .fader, .meter, .control:
             return LayerStyle(backgroundColor: VColor(hex: "#3A3A3C"), cornerRadius: 8)
+        case .vectorPath:
+            return LayerStyle(backgroundColor: nil, foregroundColor: .white, borderColor: .white, borderWidth: 2)
         default:
             return .default
         }

@@ -50,6 +50,10 @@ struct InspectorView: View {
                     lineSection(layer)
                 }
 
+                if layer.kind == .vectorPath {
+                    vectorPathSection(layer)
+                }
+
                 organisationSection(layer)
 
                 constraintsSection(layer)
@@ -178,6 +182,35 @@ struct InspectorView: View {
                     set: { v in store.updateSelectedLine { $0.snapMode = v } })) {
                     ForEach(LineSnapMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
                 }.labelsHidden()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func vectorPathSection(_ layer: Layer) -> some View {
+        let path = layer.vectorPath ?? VectorPathSpec()
+        Section("Vector Path") {
+            Toggle("Closed Path", isOn: Binding(
+                get: { path.isClosed },
+                set: { v in store.updateSelectedLayer { $0.vectorPath = path.with(isClosed: v) } }))
+            LabeledContent("Anchors") { Text("\(path.anchors.count)") }
+            LabeledContent("Stroke Width") {
+                TextField("1", value: Binding(
+                    get: { path.strokeWidth },
+                    set: { v in store.updateSelectedLayer { $0.vectorPath = path.with(strokeWidth: max(0, v)) } }),
+                    format: .number.precision(.fractionLength(0...1)))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+            colorRow("Stroke", Binding(
+                get: { path.strokeColor?.swiftUI ?? .primary },
+                set: { v in store.updateSelectedLayer { $0.vectorPath = path.with(strokeColor: v.vColor) } }))
+            Toggle("Fill Enabled", isOn: Binding(
+                get: { path.fillColor != nil },
+                set: { v in store.updateSelectedLayer { $0.vectorPath = path.with(fillColor: v ? .some(path.fillColor ?? .white) : .some(nil)) } }))
+            if path.fillColor != nil {
+                colorRow("Fill", Binding(
+                    get: { path.fillColor?.swiftUI ?? .clear },
+                    set: { v in store.updateSelectedLayer { $0.vectorPath = path.with(fillColor: v.vColor) } }))
             }
         }
     }
@@ -730,6 +763,18 @@ struct AlignmentControls: View {
 private extension CropSpec {
     func with(x: Double? = nil, y: Double? = nil, width: Double? = nil, height: Double? = nil) -> CropSpec {
         CropSpec(x: x ?? self.x, y: y ?? self.y, width: width ?? self.width, height: height ?? self.height)
+    }
+}
+
+private extension VectorPathSpec {
+    func with(isClosed: Bool? = nil, strokeWidth: Double? = nil,
+              strokeColor: VColor? = nil, fillColor: VColor?? = nil) -> VectorPathSpec {
+        var copy = self
+        if let isClosed { copy.isClosed = isClosed }
+        if let strokeWidth { copy.strokeWidth = strokeWidth }
+        if let strokeColor { copy.strokeColor = strokeColor }
+        if let fillColor { copy.fillColor = fillColor }
+        return copy
     }
 }
 

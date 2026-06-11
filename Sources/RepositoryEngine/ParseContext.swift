@@ -347,6 +347,7 @@ struct ParseContext {
         case .panel, .container, .background, .group: return VSize(width: 100, height: 60)
         case .shape, .gradient, .mask: return VSize(width: 100, height: 60)
         case .line: return VSize(width: 120, height: 2)
+        case .vectorPath: return VSize(width: 120, height: 80)
         case .polygon: return VSize(width: 80, height: 80)
         case .control, .custom: return VSize(width: 100, height: 60)
         }

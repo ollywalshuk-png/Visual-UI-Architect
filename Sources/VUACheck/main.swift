@@ -23,6 +23,7 @@ import UIQualityEngine
 import ComponentEngine
 import ControlBehaviourEngine
 import RasterDrawingEngine
+import VectorDrawingEngine
 
 // A dependency-free assertion harness so the engines can be verified with
 // `swift run VUACheck` on a machine that has no Xcode (no XCTest).
@@ -1820,6 +1821,66 @@ func runChecks() async {
         let missingPaintReport = ValidationService().validate(Document(roots: [missingPaintedAsset], assets: [original]))
         c.check("p24 painted asset missing diagnostic",
                 missingPaintReport.issues.contains { $0.message.contains("missing painted PNG asset") })
+    }
+
+    // MARK: Phase 25 — Vector / SVG drawing tool
+    do {
+        let path = VectorPathSpec(
+            anchors: [
+                VectorAnchorPoint(point: VPoint(x: 0, y: 80)),
+                VectorAnchorPoint(point: VPoint(x: 40, y: 0),
+                                  handleIn: VPoint(x: 15, y: 20),
+                                  handleOut: VPoint(x: 70, y: 0)),
+                VectorAnchorPoint(point: VPoint(x: 120, y: 80),
+                                  handleIn: VPoint(x: 90, y: 0))
+            ],
+            isClosed: false,
+            strokeColor: .black,
+            strokeWidth: 2,
+            fillColor: nil)
+        let vectorLayer = Layer(name: "Bezier", kind: .vectorPath,
+                                frame: VRect(x: 0, y: 0, width: 120, height: 90),
+                                vectorPath: path)
+        let vectorSrc = (try? CodeGenService().generate(Document(roots: [vectorLayer])).contents) ?? ""
+        c.check("p25 vector path creates valid SwiftUI Path",
+                vectorSrc.contains("Path { path in") &&
+                vectorSrc.contains("path.move(to:") &&
+                vectorSrc.contains("path.addCurve(to:") &&
+                vectorSrc.contains(".stroke("))
+
+        let svgData = VectorDrawingEngine.svgPathData(path)
+        c.check("p25 SVG path data", svgData.hasPrefix("M 0 80") && svgData.contains("C "))
+        let svg = VectorDrawingEngine.exportSVG(layer: vectorLayer) ?? ""
+        c.check("p25 SVG export basic path",
+                svg.contains("<svg") && svg.contains("<path") && svg.contains("stroke=\"#000000\""))
+
+        let invalid = Layer(name: "Invalid Vector", kind: .vectorPath,
+                            frame: VRect(x: 0, y: 0, width: 100, height: 100),
+                            vectorPath: VectorPathSpec(anchors: [VectorAnchorPoint(point: .zero)],
+                                                       strokeColor: nil, fillColor: nil))
+        let invalidIssues = VectorDrawingEngine.validate(layer: invalid, canvasSize: VSize(width: 200, height: 200))
+        c.check("p25 invalid path diagnostic",
+                invalidIssues.contains { $0.code == .invalidPath } &&
+                invalidIssues.contains { $0.code == .missingFillStroke })
+
+        let unsupported = Layer(name: "SVG Import", kind: .vectorPath,
+                                frame: VRect(x: 0, y: 0, width: 100, height: 100),
+                                vectorPath: VectorPathSpec(
+                                    anchors: [VectorAnchorPoint(point: .zero), VectorAnchorPoint(point: VPoint(x: 20, y: 20))],
+                                    unsupportedSVGCommands: ["A"]))
+        c.check("p25 unsupported SVG command diagnostic",
+                VectorDrawingEngine.validate(layer: unsupported, canvasSize: VSize(width: 200, height: 200))
+                    .contains { $0.code == .unsupportedSVGCommand })
+
+        let outside = Layer(name: "Outside Vector", kind: .vectorPath,
+                            frame: VRect(x: 190, y: 190, width: 100, height: 100),
+                            vectorPath: VectorPathSpec(anchors: [
+                                VectorAnchorPoint(point: VPoint(x: 0, y: 0)),
+                                VectorAnchorPoint(point: VPoint(x: 40, y: 40))
+                            ]))
+        c.check("p25 path outside canvas diagnostic",
+                VectorDrawingEngine.validate(layer: outside, canvasSize: VSize(width: 200, height: 200))
+                    .contains { $0.code == .pathOutsideCanvas })
     }
 
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")

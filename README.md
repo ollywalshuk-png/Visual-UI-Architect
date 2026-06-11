@@ -264,7 +264,17 @@ system keeps design and production-quality code in sync.
   layer, unsupported image formats, empty paint layers, PNG export failure
   states, and missing painted PNG assets.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 381 checks).
+- **Phase 25 — Vector / SVG drawing tool (done):** new `.vectorPath` layer type
+  with editable vector metadata: anchor points, Bezier handles, open/closed
+  paths, stroke/fill, and retained unsupported SVG commands for diagnostics.
+  The canvas and generated SwiftUI emit real `Path` geometry, the Add Layer
+  menu can insert a default editable vector path, the inspector exposes
+  open/closed, stroke, fill, and anchor metadata, and the new
+  **`VectorDrawingEngine`** validates paths and exports basic SVG `<path>`
+  markup. Diagnostics cover empty/invalid paths, unsupported SVG commands,
+  paths outside the canvas, and missing fill/stroke.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 387 checks).
 
 ## Requirements
 

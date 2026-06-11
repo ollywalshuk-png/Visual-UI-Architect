@@ -64,6 +64,8 @@ struct LayerRenderView: View {
             shapeContent(kind)
         case .line:
             lineContent
+        case .vectorPath:
+            vectorPathContent
         case .polygon:
             polygonContent
         case .gradient:
@@ -154,6 +156,26 @@ struct LayerRenderView: View {
         PolygonShape(spec: layer.polygon ?? PolygonSpec()).fill(fillStyle)
             .overlay(PolygonShape(spec: layer.polygon ?? PolygonSpec())
                 .stroke(layer.style.borderColor?.swiftUI ?? .clear, lineWidth: layer.style.borderWidth))
+    }
+
+    private var vectorPathContent: some View {
+        let spec = layer.vectorPath ?? VectorPathSpec()
+        return Path { p in
+            guard let first = spec.anchors.first else { return }
+            p.move(to: CGPoint(x: first.point.x, y: first.point.y))
+            for (previous, current) in zip(spec.anchors, spec.anchors.dropFirst()) {
+                if let c1 = previous.handleOut, let c2 = current.handleIn {
+                    p.addCurve(to: CGPoint(x: current.point.x, y: current.point.y),
+                               control1: CGPoint(x: c1.x, y: c1.y),
+                               control2: CGPoint(x: c2.x, y: c2.y))
+                } else {
+                    p.addLine(to: CGPoint(x: current.point.x, y: current.point.y))
+                }
+            }
+            if spec.isClosed { p.closeSubpath() }
+        }
+        .stroke(spec.strokeColor?.swiftUI ?? layer.style.borderColor?.swiftUI ?? .primary,
+                lineWidth: spec.strokeWidth > 0 ? spec.strokeWidth : max(1, layer.style.borderWidth))
     }
 
     private var shape: RoundedRectangle {

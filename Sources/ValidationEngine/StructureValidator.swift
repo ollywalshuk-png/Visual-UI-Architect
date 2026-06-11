@@ -2,6 +2,7 @@ import Foundation
 import VUACore
 import LayerEngine
 import RasterDrawingEngine
+import VectorDrawingEngine
 
 /// Phase 7 structural checks: invisible/zero-size layers, invalid polygons,
 /// fully-masked content, missing asset references, and broken group hierarchy.
@@ -162,6 +163,15 @@ public struct StructureValidator: Sendable {
                         layerIDs: [layer.id]))
                 }
             }
+
+            for diagnostic in VectorDrawingEngine.validate(layer: layer, canvasSize: document.canvasSize) {
+                issues.append(ValidationIssue(
+                    severity: diagnostic.code == .unsupportedSVGCommand ? .warning : .error,
+                    category: .structure,
+                    message: diagnostic.message,
+                    recommendation: vectorRecommendation(for: diagnostic.code),
+                    layerIDs: [layer.id]))
+            }
         }
         return issues
     }
@@ -183,6 +193,16 @@ public struct StructureValidator: Sendable {
         case .noStrokes: return "Add at least one brush, pencil, or eraser stroke before export."
         case .exportPNGFailed: return "Retry export and verify the destination is writable."
         case .paintedAssetMissing: return "Re-export the painted layer so the generated PNG exists."
+        }
+    }
+
+    private func vectorRecommendation(for code: VectorPathDiagnosticCode) -> String {
+        switch code {
+        case .invalidPath: return "Add at least two anchor points."
+        case .emptyPath: return "Draw a path or remove the empty vector layer."
+        case .unsupportedSVGCommand: return "Convert the SVG command to line or cubic curve segments."
+        case .pathOutsideCanvas: return "Move anchors back inside the canvas."
+        case .missingFillStroke: return "Set a fill or stroke colour."
         }
     }
 

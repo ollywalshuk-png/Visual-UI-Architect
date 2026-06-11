@@ -19,6 +19,7 @@ public enum LayerKind: Codable, Hashable, Sendable {
     case group              // grouping container for general UI (Phase 7)
     case shape(ShapeKind)   // vector shape layer
     case line               // straight line / arrow / connector
+    case vectorPath         // editable Bezier/freehand vector path
     case polygon            // regular polygon / star
     case gradient           // gradient fill layer
     case mask               // masking layer (clips its group/siblings)
@@ -58,6 +59,7 @@ public enum LayerKind: Codable, Hashable, Sendable {
         case .group: return "Group"
         case .shape(let s): return s.displayName
         case .line: return "Line"
+        case .vectorPath: return "Vector Path"
         case .polygon: return "Polygon"
         case .gradient: return "Gradient"
         case .mask: return "Mask"
@@ -273,6 +275,8 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
     public var line: LineSpec?
     /// Polygon geometry when `kind == .polygon`.
     public var polygon: PolygonSpec?
+    /// Editable vector path geometry when `kind == .vectorPath`.
+    public var vectorPath: VectorPathSpec?
     /// Masking applied to this layer (and its children when it's a group).
     public var mask: MaskSpec?
     /// Clip the layer's content to this shape (`.clipShape` in generated code).
@@ -308,6 +312,7 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
         isAccessibilityHidden: Bool = false,
         line: LineSpec? = nil,
         polygon: PolygonSpec? = nil,
+        vectorPath: VectorPathSpec? = nil,
         mask: MaskSpec? = nil,
         clipShape: ShapeKind? = nil,
         assetTransform: AssetTransformSpec? = nil,
@@ -335,6 +340,7 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
         self.isAccessibilityHidden = isAccessibilityHidden
         self.line = line
         self.polygon = polygon
+        self.vectorPath = vectorPath
         self.mask = mask
         self.clipShape = clipShape
         self.assetTransform = assetTransform

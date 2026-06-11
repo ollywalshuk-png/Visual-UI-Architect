@@ -248,6 +248,7 @@ struct AddLayerMenu: View {
                     Button(s.displayName) { store.addShape(s) }
                 }
                 Button("Line") { store.addLine() }
+                Button("Vector Path") { store.addVectorPath() }
                 Button("Polygon") { store.addPolygon() }
                 Button("Star") { store.addPolygon(sides: 5, star: true) }
                 Button("Gradient") { store.addGradient() }

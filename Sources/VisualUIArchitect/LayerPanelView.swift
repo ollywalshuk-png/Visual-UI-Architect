@@ -131,6 +131,7 @@ private struct LayerRow: View {
         case .group: return "folder"
         case .shape(let s): return shapeIcon(s)
         case .line: return "line.diagonal"
+        case .vectorPath: return "point.topleft.down.curvedto.point.bottomright.up"
         case .polygon: return "pentagon"
         case .gradient: return "circle.lefthalf.filled"
         case .mask: return "theatermasks"

@@ -178,6 +178,25 @@ extension DocumentStore {
         }
     }
 
+    func addVectorPath() {
+        addLayer(.vectorPath)
+        if let id = selection.first {
+            mutate { LayerTree.update(id, in: &$0.roots) { l in
+                l.vectorPath = VectorPathSpec(
+                    anchors: [
+                        VectorAnchorPoint(point: VPoint(x: 10, y: l.frame.height - 10)),
+                        VectorAnchorPoint(point: VPoint(x: l.frame.width * 0.45, y: 10),
+                                          handleOut: VPoint(x: l.frame.width * 0.65, y: 10)),
+                        VectorAnchorPoint(point: VPoint(x: l.frame.width - 10, y: l.frame.height - 10))
+                    ],
+                    isClosed: false,
+                    strokeColor: .white,
+                    strokeWidth: 2)
+                l.role = .decoration
+            } }
+        }
+    }
+
     func addGradient(_ kind: GradientSpec.Kind = .linear) {
         addLayer(.gradient)
         if let id = selection.first {

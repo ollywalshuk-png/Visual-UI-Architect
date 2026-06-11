@@ -18,7 +18,7 @@ let package = Package(
             "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
             "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine", "WorkspaceEngine", "ComponentEngine",
             "BuildIntelligenceEngine", "HandoffGeneratorEngine", "UIQualityEngine", "ControlBehaviourEngine",
-            "RasterDrawingEngine"
+            "RasterDrawingEngine", "VectorDrawingEngine"
         ])
     ],
     dependencies: [
@@ -40,9 +40,10 @@ let package = Package(
         .target(name: "AssetEngine", dependencies: ["VUACore"]),
         .target(name: "ControlBehaviourEngine", dependencies: ["VUACore"]),
         .target(name: "RasterDrawingEngine", dependencies: ["VUACore"]),
+        .target(name: "VectorDrawingEngine", dependencies: ["VUACore"]),
         .target(name: "LayoutEngine", dependencies: ["VUACore", "LayerEngine"]),
         .target(name: "ConstraintEngine", dependencies: ["VUACore", "LayerEngine"]),
-        .target(name: "ValidationEngine", dependencies: ["VUACore", "LayerEngine", "RasterDrawingEngine"]),
+        .target(name: "ValidationEngine", dependencies: ["VUACore", "LayerEngine", "RasterDrawingEngine", "VectorDrawingEngine"]),
         .target(name: "GitEngine", dependencies: ["VUACore"]),
         .target(name: "CodeGenEngine", dependencies: ["VUACore", "LayerEngine", "LayoutEngine", "ControlBehaviourEngine"]),
         .target(name: "AIEngine", dependencies: ["VUACore", "LayerEngine"]),
@@ -102,7 +103,7 @@ let package = Package(
                 "GitEngine", "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
                 "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
                 "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine",
-                "UIQualityEngine", "ComponentEngine", "ControlBehaviourEngine", "RasterDrawingEngine"
+                "UIQualityEngine", "ComponentEngine", "ControlBehaviourEngine", "RasterDrawingEngine", "VectorDrawingEngine"
             ]
         ),
 
@@ -114,7 +115,7 @@ let package = Package(
                 "ConstraintEngine", "LayoutEngine", "PreviewEngine", "AIEngine", "RepositoryEngine",
                 "AssetEngine", "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
                 "CanvasEngine", "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine",
-                "UIQualityEngine", "ComponentEngine", "ControlBehaviourEngine", "RasterDrawingEngine"
+                "UIQualityEngine", "ComponentEngine", "ControlBehaviourEngine", "RasterDrawingEngine", "VectorDrawingEngine"
             ]
         ),
 

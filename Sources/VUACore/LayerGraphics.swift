@@ -325,3 +325,48 @@ public struct RasterPaintSpec: Codable, Hashable, Sendable {
 
     public var hasDrawableStrokes: Bool { strokes.contains { $0.isDrawable } }
 }
+
+public struct VectorAnchorPoint: Codable, Hashable, Sendable, Identifiable {
+    public var id: UUID
+    public var point: VPoint
+    public var handleIn: VPoint?
+    public var handleOut: VPoint?
+
+    public init(id: UUID = UUID(), point: VPoint, handleIn: VPoint? = nil, handleOut: VPoint? = nil) {
+        self.id = id
+        self.point = point
+        self.handleIn = handleIn
+        self.handleOut = handleOut
+    }
+}
+
+public struct VectorPathSpec: Codable, Hashable, Sendable {
+    public var anchors: [VectorAnchorPoint]
+    public var isClosed: Bool
+    public var strokeColor: VColor?
+    public var strokeWidth: Double
+    public var fillColor: VColor?
+    /// Unsupported SVG commands encountered during import, retained for
+    /// diagnostics without blocking the editable subset.
+    public var unsupportedSVGCommands: [String]
+
+    public init(anchors: [VectorAnchorPoint] = [],
+                isClosed: Bool = false,
+                strokeColor: VColor? = .black,
+                strokeWidth: Double = 1,
+                fillColor: VColor? = nil,
+                unsupportedSVGCommands: [String] = []) {
+        self.anchors = anchors
+        self.isClosed = isClosed
+        self.strokeColor = strokeColor
+        self.strokeWidth = strokeWidth
+        self.fillColor = fillColor
+        self.unsupportedSVGCommands = unsupportedSVGCommands
+    }
+
+    public var isValid: Bool {
+        anchors.count >= 2 && (strokeColor != nil || fillColor != nil)
+    }
+
+    public var isEmpty: Bool { anchors.isEmpty }
+}

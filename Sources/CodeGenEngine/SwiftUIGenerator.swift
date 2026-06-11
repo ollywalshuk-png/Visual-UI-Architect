@@ -132,6 +132,8 @@ public struct SwiftUIGenerator: CodeGenerator {
             emitShape(kind, layer, into: &b)
         case .line:
             emitLine(layer, into: &b)
+        case .vectorPath:
+            emitVectorPath(layer, into: &b)
         case .polygon:
             emitPolygon(layer, into: &b)
         case .gradient:
@@ -308,7 +310,7 @@ public struct SwiftUIGenerator: CodeGenerator {
 
     private func isVectorKind(_ kind: LayerKind) -> Bool {
         switch kind {
-        case .shape, .line, .polygon, .gradient, .mask: return true
+        case .shape, .line, .vectorPath, .polygon, .gradient, .mask: return true
         default: return false
         }
     }
@@ -374,6 +376,33 @@ public struct SwiftUIGenerator: CodeGenerator {
             : (line.dashed ? ", dash: [6, 4]" : "")
         let stroke = "StrokeStyle(lineWidth: \(fmt(width)), lineCap: .\(line.effectiveCap.rawValue), lineJoin: .\(line.effectiveJoin.rawValue)\(dash))"
         b.indented { $0.line(".stroke(\(strokeColorExpr(layer)), style: \(stroke))") }
+    }
+
+    private func emitVectorPath(_ layer: Layer, into b: inout SourceBuilder) {
+        let path = layer.vectorPath ?? VectorPathSpec()
+        b.block("Path { path in") { b in
+            guard let first = path.anchors.first else { return }
+            b.line("path.move(to: CGPoint(x: \(fmt(first.point.x)), y: \(fmt(first.point.y))))")
+            for pair in zip(path.anchors, path.anchors.dropFirst()) {
+                let previous = pair.0
+                let current = pair.1
+                if let c1 = previous.handleOut, let c2 = current.handleIn {
+                    b.line("path.addCurve(to: CGPoint(x: \(fmt(current.point.x)), y: \(fmt(current.point.y))), control1: CGPoint(x: \(fmt(c1.x)), y: \(fmt(c1.y))), control2: CGPoint(x: \(fmt(c2.x)), y: \(fmt(c2.y))))")
+                } else {
+                    b.line("path.addLine(to: CGPoint(x: \(fmt(current.point.x)), y: \(fmt(current.point.y))))")
+                }
+            }
+            if path.isClosed { b.line("path.closeSubpath()") }
+        }
+        b.line("}")
+        b.indented { b in
+            if let fill = path.fillColor {
+                b.line(".fill(\(colorExpr(fill)))")
+            } else {
+                let stroke = path.strokeColor.map(colorExpr) ?? "Color.primary"
+                b.line(".stroke(\(stroke), lineWidth: \(fmt(path.strokeWidth)))")
+            }
+        }
     }
 
     private func emitArrowhead(into b: inout SourceBuilder, tip: VPoint, from: VPoint) {

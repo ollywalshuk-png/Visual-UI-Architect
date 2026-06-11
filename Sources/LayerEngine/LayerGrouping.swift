@@ -32,6 +32,7 @@ public extension LayerTree {
             isAccessibilityHidden: layer.isAccessibilityHidden,
             line: layer.line,
             polygon: layer.polygon,
+            vectorPath: layer.vectorPath,
             mask: layer.mask,
             clipShape: layer.clipShape,
             assetTransform: layer.assetTransform,
