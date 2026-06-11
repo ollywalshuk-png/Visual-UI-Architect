@@ -254,7 +254,17 @@ system keeps design and production-quality code in sync.
   transformed images, missing transformed assets, and rotated assets that move
   off-canvas.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 373 checks).
+- **Phase 24 — Raster drawing tool (done):** image/background layers now carry
+  non-destructive raster paint metadata: paint mode, brush/pencil/eraser tool,
+  brush size, opacity, hardness, colour, and grouped stroke arrays. New
+  **`RasterDrawingEngine`** validates paint layers and flattens drawable
+  strokes into a new PNG `Asset` without overwriting the original imported
+  asset. The inspector exposes paint controls, generated SwiftUI records
+  paint/export metadata comments, and validation reports no selected image
+  layer, unsupported image formats, empty paint layers, PNG export failure
+  states, and missing painted PNG assets.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 381 checks).
 
 ## Requirements
 

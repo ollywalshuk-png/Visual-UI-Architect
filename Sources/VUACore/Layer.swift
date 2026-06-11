@@ -279,6 +279,8 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
     public var clipShape: ShapeKind?
     /// Asset/image transform metadata (scale, flip, crop, blend, texture hook).
     public var assetTransform: AssetTransformSpec?
+    /// Non-destructive raster paint strokes over an image/background layer.
+    public var rasterPaint: RasterPaintSpec?
     /// When set, this layer is an *instance* of the component with this id
     /// (its children are derived from the component master). Phase 15.
     public var componentID: UUID?
@@ -309,6 +311,7 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
         mask: MaskSpec? = nil,
         clipShape: ShapeKind? = nil,
         assetTransform: AssetTransformSpec? = nil,
+        rasterPaint: RasterPaintSpec? = nil,
         componentID: UUID? = nil,
         children: [Layer] = []
     ) {
@@ -335,6 +338,7 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
         self.mask = mask
         self.clipShape = clipShape
         self.assetTransform = assetTransform
+        self.rasterPaint = rasterPaint
         self.componentID = componentID
         self.children = children
     }

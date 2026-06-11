@@ -269,6 +269,7 @@ private extension Layer {
             isCollapsed: isCollapsed, isAccessibilityHidden: isAccessibilityHidden,
             line: line, polygon: polygon, mask: mask, clipShape: clipShape,
             assetTransform: assetTransform,
+            rasterPaint: rasterPaint,
             componentID: cid,
             children: children)
     }

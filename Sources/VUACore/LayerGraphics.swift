@@ -262,3 +262,66 @@ public struct AssetTransformSpec: Codable, Hashable, Sendable {
         (crop?.isIdentity ?? true) && blendMode == .normal && textureOverlayID == nil
     }
 }
+
+public enum RasterPaintTool: String, Codable, Hashable, Sendable, CaseIterable {
+    case brush, pencil, eraser
+}
+
+public struct RasterBrushSpec: Codable, Hashable, Sendable {
+    public var tool: RasterPaintTool
+    public var size: Double
+    public var opacity: Double
+    public var hardness: Double
+    public var color: VColor
+
+    public init(tool: RasterPaintTool = .brush, size: Double = 12,
+                opacity: Double = 1, hardness: Double = 0.75,
+                color: VColor = .black) {
+        self.tool = tool
+        self.size = size
+        self.opacity = opacity
+        self.hardness = hardness
+        self.color = color
+    }
+}
+
+public struct RasterPaintStroke: Codable, Hashable, Sendable, Identifiable {
+    public var id: UUID
+    public var brush: RasterBrushSpec
+    public var points: [VPoint]
+
+    public init(id: UUID = UUID(), brush: RasterBrushSpec = RasterBrushSpec(), points: [VPoint]) {
+        self.id = id
+        self.brush = brush
+        self.points = points
+    }
+
+    public var isDrawable: Bool { points.count >= 2 && brush.size > 0 && brush.opacity > 0 }
+}
+
+/// Non-destructive raster drawing metadata. Strokes sit over an image layer and
+/// can be flattened/exported as a new PNG asset without overwriting the source.
+public struct RasterPaintSpec: Codable, Hashable, Sendable {
+    public var isPaintModeEnabled: Bool
+    public var activeBrush: RasterBrushSpec
+    public var strokes: [RasterPaintStroke]
+    public var exportedAssetID: UUID?
+    public var exportedAssetName: String?
+    public var preservesOriginalAsset: Bool
+
+    public init(isPaintModeEnabled: Bool = false,
+                activeBrush: RasterBrushSpec = RasterBrushSpec(),
+                strokes: [RasterPaintStroke] = [],
+                exportedAssetID: UUID? = nil,
+                exportedAssetName: String? = nil,
+                preservesOriginalAsset: Bool = true) {
+        self.isPaintModeEnabled = isPaintModeEnabled
+        self.activeBrush = activeBrush
+        self.strokes = strokes
+        self.exportedAssetID = exportedAssetID
+        self.exportedAssetName = exportedAssetName
+        self.preservesOriginalAsset = preservesOriginalAsset
+    }
+
+    public var hasDrawableStrokes: Bool { strokes.contains { $0.isDrawable } }
+}

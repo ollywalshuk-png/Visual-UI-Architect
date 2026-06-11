@@ -61,6 +61,7 @@ struct InspectorView: View {
 
                 if layer.kind == .image || layer.kind == .background {
                     transformSection(layer)
+                    paintSection(layer)
                     assetSection(layer)
                 }
             }
@@ -296,6 +297,57 @@ struct InspectorView: View {
         TextField("0...1", value: Binding(get: { value }, set: { set(min(1, max(0, $0))) }),
                   format: .number.precision(.fractionLength(0...2)))
         .textFieldStyle(.roundedBorder).frame(width: 80)
+    }
+
+    // MARK: - Raster paint section
+
+    @ViewBuilder
+    private func paintSection(_ layer: Layer) -> some View {
+        let paint = layer.rasterPaint ?? RasterPaintSpec()
+        Section("Raster Paint") {
+            Toggle("Paint Mode", isOn: Binding(
+                get: { paint.isPaintModeEnabled },
+                set: { v in updateRasterPaint { $0.isPaintModeEnabled = v } }))
+            LabeledContent("Tool") {
+                Picker("", selection: Binding(
+                    get: { paint.activeBrush.tool },
+                    set: { v in updateRasterPaint { $0.activeBrush.tool = v } })) {
+                    ForEach(RasterPaintTool.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }.labelsHidden()
+            }
+            LabeledContent("Size") {
+                TextField("12", value: Binding(
+                    get: { paint.activeBrush.size },
+                    set: { v in updateRasterPaint { $0.activeBrush.size = max(1, v) } }),
+                    format: .number.precision(.fractionLength(0...1)))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+            LabeledContent("Opacity") {
+                Slider(value: Binding(
+                    get: { paint.activeBrush.opacity },
+                    set: { v in updateRasterPaint { $0.activeBrush.opacity = v } }), in: 0...1)
+                .frame(width: 120)
+            }
+            LabeledContent("Hardness") {
+                Slider(value: Binding(
+                    get: { paint.activeBrush.hardness },
+                    set: { v in updateRasterPaint { $0.activeBrush.hardness = v } }), in: 0...1)
+                .frame(width: 120)
+            }
+            colorRow("Brush Color", Binding(
+                get: { paint.activeBrush.color.swiftUI },
+                set: { v in updateRasterPaint { $0.activeBrush.color = v.vColor } }))
+            Text("\(paint.strokes.count) stroke\(paint.strokes.count == 1 ? "" : "s") · original asset preserved")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func updateRasterPaint(_ change: @escaping (inout RasterPaintSpec) -> Void) {
+        store.updateSelectedLayer { layer in
+            var paint = layer.rasterPaint ?? RasterPaintSpec()
+            change(&paint)
+            layer.rasterPaint = paint
+        }
     }
 
     // MARK: - AU parameter (plugin control) section

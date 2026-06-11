@@ -35,6 +35,7 @@ public extension LayerTree {
             mask: layer.mask,
             clipShape: layer.clipShape,
             assetTransform: layer.assetTransform,
+            rasterPaint: layer.rasterPaint,
             componentID: layer.componentID,   // duplicating an instance keeps the ref
             children: layer.children.map { cloneWithNewIDs($0) })
     }

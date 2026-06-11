@@ -22,6 +22,7 @@ import HandoffGeneratorEngine
 import UIQualityEngine
 import ComponentEngine
 import ControlBehaviourEngine
+import RasterDrawingEngine
 
 // A dependency-free assertion harness so the engines can be verified with
 // `swift run VUACheck` on a machine that has no Xcode (no XCTest).
@@ -1760,6 +1761,65 @@ func runChecks() async {
     } catch {
         FileHandle.standardError.write(Data("p23 exception: \(error)\n".utf8))
         c.check("p23 exception", false)
+    }
+
+    // MARK: Phase 24 — Raster drawing tool
+    do {
+        let original = Asset(name: "Original", path: "Original.png", format: .png,
+                             intrinsicSize: VSize(width: 120, height: 80))
+        let brush = RasterBrushSpec(tool: .brush, size: 8, opacity: 0.6,
+                                    hardness: 0.5, color: VColor(hex: "#FF0000") ?? VColor(red: 1, green: 0, blue: 0))
+        let stroke = RasterPaintStroke(brush: brush,
+                                       points: [VPoint(x: 10, y: 10), VPoint(x: 60, y: 30), VPoint(x: 100, y: 60)])
+        var paint = RasterPaintSpec(isPaintModeEnabled: true, activeBrush: brush, strokes: [stroke])
+        let imageLayer = Layer(name: "Paintable", kind: .image,
+                               frame: VRect(x: 0, y: 0, width: 120, height: 80),
+                               assetID: original.id,
+                               rasterPaint: paint)
+
+        c.check("p24 raster stroke creation", stroke.isDrawable && paint.hasDrawableStrokes)
+        c.check("p24 paint layer validates", RasterDrawingEngine.validatePaintLayer(imageLayer, asset: original).isEmpty)
+
+        let export = RasterDrawingEngine.exportPaintedPNG(layer: imageLayer, baseAsset: original, name: "Paintable_Edit")
+        c.check("p24 paint layer exports PNG metadata",
+                export?.asset.name == "Paintable_Edit" &&
+                export?.asset.format == .png &&
+                export?.asset.tags.contains("paint") == true &&
+                !(export?.pngData.isEmpty ?? true))
+        c.check("p24 original asset remains unchanged",
+                export?.originalAssetID == original.id && original.path == "Original.png")
+
+        paint.exportedAssetID = export?.asset.id
+        paint.exportedAssetName = export?.asset.name
+        let paintedLayer = Layer(name: "Painted", kind: .image,
+                                 frame: VRect(x: 0, y: 0, width: 120, height: 80),
+                                 assetID: original.id,
+                                 rasterPaint: paint)
+        let paintedSrc = (try? CodeGenService().generate(Document(roots: [paintedLayer], assets: [original])).contents) ?? ""
+        c.check("p24 codegen emits paint metadata",
+                paintedSrc.contains("// Raster paint: 1 stroke") && paintedSrc.contains("// Painted PNG asset: Paintable_Edit"))
+
+        let unsupported = Asset(name: "Vector", path: "Vector.svg", format: .svg)
+        let unsupportedIssues = RasterDrawingEngine.validatePaintLayer(imageLayer, asset: unsupported)
+        c.check("p24 unsupported image format diagnostic",
+                unsupportedIssues.contains { $0.code == RasterPaintDiagnosticCode.unsupportedImageFormat })
+
+        let emptyPaintLayer = Layer(name: "Empty Paint", kind: .image,
+                                    frame: VRect(x: 0, y: 0, width: 120, height: 80),
+                                    assetID: original.id,
+                                    rasterPaint: RasterPaintSpec(isPaintModeEnabled: true))
+        c.check("p24 paint layer no strokes diagnostic",
+                RasterDrawingEngine.validatePaintLayer(emptyPaintLayer, asset: original).contains { $0.code == .noStrokes })
+
+        let missingPaintedAsset = Layer(name: "Missing Painted", kind: .image,
+                                        frame: VRect(x: 0, y: 0, width: 120, height: 80),
+                                        assetID: original.id,
+                                        rasterPaint: RasterPaintSpec(strokes: [stroke],
+                                                                     exportedAssetID: UUID(),
+                                                                     exportedAssetName: "MissingPaint"))
+        let missingPaintReport = ValidationService().validate(Document(roots: [missingPaintedAsset], assets: [original]))
+        c.check("p24 painted asset missing diagnostic",
+                missingPaintReport.issues.contains { $0.message.contains("missing painted PNG asset") })
     }
 
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")

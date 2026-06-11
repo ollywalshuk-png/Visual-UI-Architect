@@ -1,6 +1,7 @@
 import Foundation
 import VUACore
 import LayerEngine
+import RasterDrawingEngine
 
 /// Phase 7 structural checks: invisible/zero-size layers, invalid polygons,
 /// fully-masked content, missing asset references, and broken group hierarchy.
@@ -139,6 +140,28 @@ public struct StructureValidator: Sendable {
                     recommendation: lineRecommendation(for: diagnostic.code),
                     layerIDs: [layer.id]))
             }
+
+            if layer.rasterPaint != nil {
+                let asset = layer.assetID.flatMap { id in document.assets.first { $0.id == id } }
+                for diagnostic in RasterDrawingEngine.validatePaintLayer(layer, asset: asset) {
+                    issues.append(ValidationIssue(
+                        severity: diagnostic.code == .unsupportedImageFormat ? .error : .warning,
+                        category: .asset,
+                        message: diagnostic.message,
+                        recommendation: rasterRecommendation(for: diagnostic.code),
+                        layerIDs: [layer.id]))
+                }
+                if let paint = layer.rasterPaint,
+                   let exported = paint.exportedAssetID,
+                   !assetIDs.contains(exported) {
+                    issues.append(ValidationIssue(
+                        severity: .error,
+                        category: .asset,
+                        message: "\(layer.name) references a missing painted PNG asset.",
+                        recommendation: "Re-export the paint layer or remove the stale painted asset link.",
+                        layerIDs: [layer.id]))
+                }
+            }
         }
         return issues
     }
@@ -150,6 +173,16 @@ public struct StructureValidator: Sendable {
         case .invalidArrow: return "Lengthen the line or remove one arrowhead."
         case .unsupportedConnector: return "Add explicit connector handles if exact routing matters."
         case .lineOutsideCanvas: return "Move the line back inside the canvas or resize the canvas."
+        }
+    }
+
+    private func rasterRecommendation(for code: RasterPaintDiagnosticCode) -> String {
+        switch code {
+        case .noSelectedImageLayer: return "Select an image/background layer before entering paint mode."
+        case .unsupportedImageFormat: return "Paint over PNG or JPEG assets, or rasterise the source first."
+        case .noStrokes: return "Add at least one brush, pencil, or eraser stroke before export."
+        case .exportPNGFailed: return "Retry export and verify the destination is writable."
+        case .paintedAssetMissing: return "Re-export the painted layer so the generated PNG exists."
         }
     }
 

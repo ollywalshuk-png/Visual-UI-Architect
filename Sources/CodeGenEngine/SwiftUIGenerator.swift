@@ -88,6 +88,12 @@ public struct SwiftUIGenerator: CodeGenerator {
                 }
             }
         }
+        if let paint = layer.rasterPaint {
+            b.line("// Raster paint: \(paint.strokes.count) stroke(s), tool \(paint.activeBrush.tool.rawValue), original asset preserved")
+            if let name = paint.exportedAssetName {
+                b.line("// Painted PNG asset: \(name)")
+            }
+        }
         b.block("Group {") { b in
             emitContent(layer, into: &b, document: document)
         }
