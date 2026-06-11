@@ -336,7 +336,29 @@ system keeps design and production-quality code in sync.
   are foundation-only detection states and future adapters are surfaced safely
   with warnings instead of destructive or silent imports.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 463 checks).
+- **Phase 41 — Design system and theme engine (done):** design tokens now cover
+  border, elevation, opacity, and glass styles in addition to colours,
+  typography, spacing, radius, shadows, gradients, and materials. The token
+  browser can add full professional theme sets including Apple Light/Dark/Glass/
+  Vision, Modern Pro/Dark, Studio Dark, Audio Workstation, Electron Dark,
+  Raycast-style, Linear-style, Notion-style, DAW Dark, Ableton-inspired, and
+  Logic-inspired. Code generation emits the expanded token namespace.
+
+- **Phase 42 — Professional audio UI asset library (done):** the reusable
+  control asset catalog now includes 300+ assets, with expanded pro-audio
+  families for 60 knobs, 60 faders, 40 meters, 40 switches, 30 displays, and
+  30 panels/backgrounds. Families include Logic-inspired, Ableton-inspired,
+  SSL-inspired, Neve-inspired, API-inspired, Moog-inspired, Nord-inspired,
+  Roland-inspired, Elektron-inspired, Apple-inspired, and Glass-inspired tags.
+
+- **Phase 45 — Advanced SwiftUI import coverage (done):** the SwiftSyntax parser
+  now recognises NavigationSplitView, TabView, Toolbar, Menu, DisclosureGroup,
+  GeometryReader, Canvas, TimelineView, ViewThatFits, AnyLayout, ForEach,
+  SecureField, Stepper, DatePicker, Link, and representable/layout placeholders.
+  Unsupported runtime-heavy structures become locked diagnostic layers rather
+  than being silently discarded.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 482 checks).
 
 ## Requirements
 

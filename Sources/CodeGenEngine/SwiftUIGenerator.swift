@@ -80,14 +80,18 @@ public struct SwiftUIGenerator: CodeGenerator {
                     b.line("static let \(token.swiftName) = \(colorExpr(color))")
                 case .typography(let size, let weight):
                     b.line("static let \(token.swiftName) = Font.system(size: \(fmt(size))\(weight.map { ", weight: .\($0.rawValue)" } ?? ""))")
-                case .spacing(let value), .cornerRadius(let value):
+                case .spacing(let value), .cornerRadius(let value), .elevation(let value), .opacity(let value):
                     b.line("static let \(token.swiftName): CGFloat = \(fmt(value))")
+                case .border(let width, let color):
+                    b.line("static let \(token.swiftName) = (width: CGFloat(\(fmt(width))), color: \(colorExpr(color)))")
                 case .shadow(let shadow):
                     b.line("static let \(token.swiftName) = (color: \(colorExpr(shadow.color)), radius: \(fmt(shadow.radius)), x: \(fmt(shadow.x)), y: \(fmt(shadow.y)))")
                 case .gradient(let gradient):
                     b.line("static let \(token.swiftName) = \(gradientExpr(gradient))")
                 case .material(let material):
                     b.line("static let \(token.swiftName): Material = .\(material)")
+                case .glass(let style, let tint):
+                    b.line("static let \(token.swiftName) = (style: \"\(style)\", tint: \(tint.map(colorExpr) ?? "Color.clear"))")
                 }
             }
         }

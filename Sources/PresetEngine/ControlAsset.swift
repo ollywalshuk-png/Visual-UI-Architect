@@ -5,7 +5,7 @@ import VUACore
 /// asset role/function/behaviour expectations explicitly so imported or
 /// generated controls can be treated as functional UI building blocks.
 public enum ControlAssetCategory: String, CaseIterable, Hashable, Sendable {
-    case knob, fader, slider, button, toggle, meter
+    case knob, fader, slider, button, toggle, meter, display, panel
 
     public var displayName: String {
         switch self {
@@ -15,6 +15,8 @@ public enum ControlAssetCategory: String, CaseIterable, Hashable, Sendable {
         case .button: return "Buttons"
         case .toggle: return "Switches"
         case .meter: return "Meters"
+        case .display: return "Displays"
+        case .panel: return "Panels"
         }
     }
 
@@ -26,6 +28,8 @@ public enum ControlAssetCategory: String, CaseIterable, Hashable, Sendable {
         case .button: return .button
         case .toggle: return .toggleSwitch
         case .meter: return .meterLED
+        case .display: return .decoration
+        case .panel: return .backplate
         }
     }
 
@@ -35,7 +39,7 @@ public enum ControlAssetCategory: String, CaseIterable, Hashable, Sendable {
         case .fader, .slider: return .linearControl
         case .button: return .pressControl
         case .toggle: return .toggleControl
-        case .meter: return .displayOnly
+        case .meter, .display, .panel: return .displayOnly
         }
     }
 
@@ -47,6 +51,8 @@ public enum ControlAssetCategory: String, CaseIterable, Hashable, Sendable {
         case .button: return .button
         case .toggle: return .toggle
         case .meter: return .meter
+        case .display: return .text
+        case .panel: return .panel
         }
     }
 }
@@ -140,8 +146,8 @@ public struct ControlAsset: Identifiable, Hashable, Sendable {
             maxValue: valueRange?.upperBound,
             defaultValue: defaultValue,
             unit: unit,
-            automationEnabled: category != .button,
-            isContinuous: category != .button && category != .toggle,
+            automationEnabled: ![.button, .display, .panel].contains(category),
+            isContinuous: ![.button, .toggle, .display, .panel].contains(category),
             stepCount: (category == .button || category == .toggle) ? 2 : nil)
 
         if behaviour == .steppedKnob {
@@ -198,14 +204,15 @@ public struct ControlAsset: Identifiable, Hashable, Sendable {
         case .knob: return min(defaultSize.width, defaultSize.height) / 2
         case .toggle: return defaultSize.height / 2
         case .fader: return min(8, defaultSize.width / 2)
-        case .slider, .meter: return min(visualStyle.cornerRadius, defaultSize.height / 2)
+        case .slider, .meter, .display: return min(visualStyle.cornerRadius, defaultSize.height / 2)
         case .button: return visualStyle.cornerRadius
+        case .panel: return visualStyle.cornerRadius
         }
     }
 
     private var layerText: String? {
         switch category {
-        case .button, .toggle: return name.replacingOccurrences(of: " Button", with: "")
+        case .button, .toggle, .display: return name.replacingOccurrences(of: " Button", with: "")
             .replacingOccurrences(of: " Switch", with: "")
         default: return nil
         }
@@ -322,6 +329,8 @@ public enum ControlAssetLibrary {
         case .button: return named(buttons, category: category)
         case .toggle: return named(toggles, category: category)
         case .meter: return named(meters, category: category)
+        case .display: return named(displays, category: category)
+        case .panel: return named(panels, category: category)
         }
     }
 
@@ -370,12 +379,16 @@ public enum ControlAssetLibrary {
         .init(family: "Utility", surface: .h("#E5E5EA"), accent: .h("#007AFF"), border: .h("#AEAEB2"), cornerRadius: 5, material: "system")
     ]
 
-    private static let knobs = ["classic rotary", "modern flat", "vintage pointer", "moog-style", "minimal dot", "encoder ring", "bipolar knob", "stepped selector", "metallic cap", "glass cap", "rubberised cap", "small trim pot", "macro knob", "filter knob", "pan knob", "fine tune knob", "neon ring", "dark pro", "blue apple-style", "large performance knob"]
-    private static let faders = ["channel strip fader", "master fader", "send fader", "trim fader", "slim studio fader", "dark mixer fader", "vintage console fader", "vertical flat fader", "long throw fader", "compact fader", "level fader", "pan-balance fader", "macro fader", "glass fader", "meter-backed fader", "plugin fader", "pro blue fader", "silver cap fader", "dark cap fader", "automation lane fader"]
+    private static let proFamilies = ["logic-inspired", "ableton-inspired", "ssl-inspired", "neve-inspired", "api-inspired", "moog-inspired", "nord-inspired", "roland-inspired", "elektron-inspired", "apple-inspired", "glass-inspired"]
+
+    private static let knobs = expanded(["classic rotary", "modern flat", "vintage pointer", "moog-style", "minimal dot", "encoder ring"], count: 60, suffix: "knob")
+    private static let faders = expanded(["channel strip", "master", "send", "trim", "slim studio", "dark mixer"], count: 60, suffix: "fader")
     private static let sliders = ["horizontal value slider", "range slider", "bipolar slider", "segmented slider", "compact slider", "settings slider", "brightness slider", "volume slider", "scrub slider", "timeline slider", "blue pro slider", "minimal slider", "chunky slider", "glass slider", "dark slider", "iOS-style slider", "macOS-style slider", "parameter slider", "stepped slider", "fine-control slider"]
     private static let buttons = ["push button", "icon button", "wide button", "hero button", "toolbar button", "soft button", "glass button", "dark pro button", "danger button", "success button", "transport button", "segmented button", "square pad", "round pad", "toggle button", "preset button", "menu button", "bypass button", "macro button", "compact button"]
-    private static let toggles = ["iOS switch", "macOS switch", "bypass switch", "solo switch", "mute switch", "power switch", "pill switch", "LED switch", "rocker switch", "mini switch", "dark pro switch", "glass switch", "neon switch", "safety switch", "mode switch", "A/B switch", "sync switch", "enable switch", "compact switch", "large switch"]
-    private static let meters = ["vertical meter", "horizontal meter", "stereo meter", "peak meter", "RMS meter", "VU meter", "LED ladder", "bar meter", "thin level meter", "wide output meter", "gain reduction meter", "pan meter", "activity meter", "CPU meter", "progress meter", "analyser strip", "dark pro meter", "neon meter", "vintage meter", "compact meter"]
+    private static let toggles = expanded(["bypass", "solo", "mute", "power"], count: 40, suffix: "switch")
+    private static let meters = expanded(["vertical", "horizontal", "stereo", "peak"], count: 40, suffix: "meter")
+    private static let displays = expanded(["OLED readout", "LCD value", "spectrum", "preset"], count: 30, suffix: "display")
+    private static let panels = expanded(["rack backplate", "device body", "glass surface", "mixer strip"], count: 30, suffix: "panel")
 
     private static func size(for category: ControlAssetCategory, index: Int) -> VSize {
         switch category {
@@ -385,6 +398,8 @@ public enum ControlAssetLibrary {
         case .button: return VSize(width: [72, 96, 128, 180, 220][index % 5], height: [28, 32, 36, 44, 52][index % 5])
         case .toggle: return VSize(width: [96, 116, 140, 170, 200][index % 5], height: [26, 28, 30, 32, 36][index % 5])
         case .meter: return index % 3 == 1 ? VSize(width: 180, height: 24) : VSize(width: [20, 24, 28, 36, 44][index % 5], height: [110, 140, 170, 200, 230][index % 5])
+        case .display: return VSize(width: [120, 150, 180, 220, 260][index % 5], height: [36, 44, 54, 64, 80][index % 5])
+        case .panel: return VSize(width: [280, 360, 440, 520, 640][index % 5], height: [160, 220, 280, 340, 420][index % 5])
         }
     }
 
@@ -399,7 +414,7 @@ public enum ControlAssetLibrary {
         case .slider: return .horizontalSlider
         case .button: return .buttonPress
         case .toggle: return .toggleSwitch
-        case .meter: return .meterReadout
+        case .meter, .display, .panel: return .meterReadout
         }
     }
 
@@ -407,7 +422,8 @@ public enum ControlAssetLibrary {
         switch category {
         case .button: return 0...1
         case .toggle: return 0...1
-        case .meter: return name.contains("CPU") || name.contains("progress") ? 0...100 : -60...6
+        case .meter, .display: return name.contains("CPU") || name.contains("progress") ? 0...100 : -60...6
+        case .panel: return nil
         default:
             if name.contains("pan") || name.contains("bipolar") { return -100...100 }
             if name.contains("fine") || name.contains("tune") { return -12...12 }
@@ -419,7 +435,8 @@ public enum ControlAssetLibrary {
     private static func defaultValue(for category: ControlAssetCategory, name: String) -> Double? {
         switch category {
         case .button, .toggle: return category == .toggle ? 1 : 0
-        case .meter: return name.contains("CPU") || name.contains("progress") ? 50 : -18
+        case .meter, .display: return name.contains("CPU") || name.contains("progress") ? 50 : -18
+        case .panel: return nil
         default:
             if name.contains("pan") || name.contains("bipolar") || name.contains("tune") { return 0 }
             if name.contains("filter") { return 1000 }
@@ -432,7 +449,7 @@ public enum ControlAssetLibrary {
         if name.contains("filter") { return .hertz }
         if name.contains("tune") { return .semitones }
         if name.contains("CPU") || name.contains("progress") || name.contains("mix") { return .percent }
-        return category == .button || category == .toggle ? .generic : .percent
+        return [.button, .toggle, .display, .panel].contains(category) ? .generic : .percent
     }
 
     private static func tags(for category: ControlAssetCategory, name: String, style: ControlVisualStyle) -> [String] {
@@ -445,6 +462,15 @@ public enum ControlAssetLibrary {
         value.lowercased().map { ch in
             ch.isLetter || ch.isNumber ? String(ch) : "-"
         }.joined().split(separator: "-").joined(separator: "-")
+    }
+
+    private static func expanded(_ bases: [String], count: Int, suffix: String) -> [String] {
+        (0..<count).map { index in
+            let family = proFamilies[index % proFamilies.count]
+            let base = bases[index % bases.count]
+            let variant = (index / bases.count) + 1
+            return "\(family) \(base) \(suffix) \(variant)"
+        }
     }
 }
 

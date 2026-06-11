@@ -35,6 +35,14 @@ extension DocumentStore {
         repositoryStatus = "Added default design tokens."
     }
 
+    func addDesignTheme(_ theme: DesignTheme) {
+        mutate { doc in
+            let existing = Set(doc.designTokens.map { $0.name })
+            doc.designTokens.append(contentsOf: theme.tokens.filter { !existing.contains($0.name) })
+        }
+        repositoryStatus = "Added theme '\(theme.name)' tokens."
+    }
+
     func applyTokenToSelection(_ token: DesignToken) {
         guard let id = selection.first else { return }
         mutate { doc in
@@ -52,14 +60,30 @@ extension DocumentStore {
                 case .cornerRadius(let radius):
                     layer.style.cornerRadius = radius
                     layer.style.tokens.cornerRadius = token.id
+                case .border(let width, let color):
+                    layer.style.borderWidth = width
+                    layer.style.borderColor = color
+                    layer.style.tokens.border = token.id
                 case .shadow(let shadow):
                     layer.style.shadow = shadow
                     layer.style.tokens.shadow = token.id
+                case .elevation(let elevation):
+                    layer.style.shadow = ShadowSpec(color: VColor(red: 0, green: 0, blue: 0, alpha: 0.24),
+                                                    radius: elevation * 5,
+                                                    x: 0,
+                                                    y: elevation * 2)
+                    layer.style.tokens.elevation = token.id
+                case .opacity(let opacity):
+                    layer.style.opacity = opacity
+                    layer.style.tokens.opacity = token.id
                 case .gradient(let gradient):
                     layer.style.gradient = gradient
                     layer.style.tokens.gradient = token.id
                 case .material:
                     layer.style.tokens.material = token.id
+                case .glass:
+                    layer.kind = .shape(.glassPanel)
+                    layer.style.tokens.glass = token.id
                 }
             }
         }

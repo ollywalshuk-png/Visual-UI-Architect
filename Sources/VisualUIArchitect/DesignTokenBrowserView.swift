@@ -38,6 +38,15 @@ struct DesignTokenBrowserView: View {
             Button { store.addDefaultDesignTokens() } label: { Image(systemName: "plus.circle") }
                 .buttonStyle(.borderless)
                 .help("Add default token set")
+            Menu {
+                ForEach(DesignThemeLibrary.all) { theme in
+                    Button(theme.name) { store.addDesignTheme(theme) }
+                }
+            } label: {
+                Image(systemName: "swatchpalette")
+            }
+            .buttonStyle(.borderless)
+            .help("Add a professional theme token set")
         }
         .padding(8)
     }
@@ -79,9 +88,13 @@ struct DesignTokenBrowserView: View {
         case .typography(let size, let weight): return "Type \(Int(size)) \(weight?.rawValue ?? "regular")"
         case .spacing(let value): return "Spacing \(Int(value))"
         case .cornerRadius(let value): return "Radius \(Int(value))"
+        case .border(let width, _): return "Border \(Int(width))"
         case .shadow(let shadow): return "Shadow r\(Int(shadow.radius))"
+        case .elevation(let value): return "Elevation \(Int(value))"
+        case .opacity(let value): return "Opacity \(Int(value * 100))%"
         case .gradient: return "Gradient"
         case .material(let material): return material
+        case .glass(let style, _): return "Glass \(style)"
         }
     }
 }

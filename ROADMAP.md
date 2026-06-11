@@ -70,6 +70,9 @@ rebuild app bundle → update README → commit when green.
 | P33 | Import-to-edit fail-safety | ✅ done | auto-anchor unanchored imports, apply-capable common SwiftUI, concrete style write-back |
 | P39 | Universal import architecture | ✅ done | ImportEngine framework detection for SwiftUI/UIKit/AppKit/React/React Native/Electron/HTML/CSS/Flutter/unknown |
 | P40 | Import Wizard | ✅ done | guided project selection, detection, summary, screen review, warnings, and SwiftUI import handoff |
+| P41 | Design system & theme engine | ✅ done | expanded token kinds, Apple/modern/productivity/audio themes, glass/material styles |
+| P42 | Professional audio UI asset library | ✅ done | 300+ assets: 60 knobs, 60 faders, 40 meters, 40 switches, 30 displays, 30 panels |
+| P45 | Advanced SwiftUI import coverage | ✅ done | NavigationSplitView/TabView/Menu/ForEach/GeometryReader/Canvas/Timeline/representable placeholders |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when
 the project was restored from a Google Drive zip export (Drive strips

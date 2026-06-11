@@ -216,6 +216,61 @@ func runChecks() async {
             structuralLayers.contains { $0.name == "List" } &&
             structuralLayers.contains { $0.name == "Form" })
     c.check("round-trip parses text field", structuralLayers.contains { $0.kind == .text && $0.text == "Name" })
+    let advancedImportSource = #"""
+    import SwiftUI
+    struct AdvancedImportScreen: View {
+        @Environment(\.colorScheme) var colorScheme
+        @State private var selection = 0
+        @Binding var enabled: Bool
+        var body: some View {
+            NavigationSplitView {
+                List {
+                    ForEach([1, 2, 3], id: \\.self) { item in
+                        DisclosureGroup("Item") {
+                            Toggle("Enabled", isOn: $enabled)
+                            Stepper("Amount", value: .constant(1))
+                            DatePicker("Date", selection: .constant(Date()))
+                        }
+                    }
+                }
+                .toolbar { Toolbar { Button("Add") {} } }
+            } detail: {
+                TabView(selection: $selection) {
+                    GeometryReader { proxy in
+                        Canvas { context, size in }
+                        TimelineView(.animation) { timeline in Text("Live") }
+                        ViewThatFits { Text("Wide"); Text("Narrow") }
+                    }
+                    Menu("More") { Button("Open") {} }
+                    SecureField("Secret", text: .constant(""))
+                    Link("Docs", destination: URL(string: "https://example.com")!)
+                    CustomRepresentable()
+                }
+            }
+        }
+    }
+    """#
+    let advancedImportLayers = SwiftUIParser().parse(source: advancedImportSource, filePath: "Advanced.swift")
+        .first?.roots.flatMap { $0.flattened() } ?? []
+    c.check("p45 parses navigation split/tab/forEach",
+            advancedImportLayers.contains { $0.name == "NavigationSplitView" } &&
+            advancedImportLayers.contains { $0.name == "TabView" } &&
+            advancedImportLayers.contains { $0.name == "ForEach" })
+    c.check("p45 parses menu/disclosure/geometry",
+            advancedImportLayers.contains { $0.name == "Menu" } &&
+            advancedImportLayers.contains { $0.name == "DisclosureGroup" } &&
+            advancedImportLayers.contains { $0.name == "GeometryReader" })
+    c.check("p45 parses broader controls",
+            advancedImportLayers.contains { $0.kind == .control && $0.text == "Amount" } &&
+            advancedImportLayers.contains { $0.kind == .control && $0.text == "Date" } &&
+            advancedImportLayers.contains { $0.kind == .text && $0.text == "Secret" } &&
+            advancedImportLayers.contains { $0.kind == .button && $0.text == "Docs" })
+    c.check("p45 locked unsupported runtime placeholders",
+            advancedImportLayers.contains { $0.name == "Canvas" && $0.isLocked } &&
+            advancedImportLayers.contains { $0.name == "TimelineView" && $0.isLocked } &&
+            advancedImportLayers.contains { $0.name == "CustomRepresentable" && $0.isLocked })
+    c.check("p45 unsupported placeholders carry diagnostics",
+            advancedImportLayers.contains { ($0.notes ?? "").contains("preserved as a locked placeholder") })
 
     // MARK: Safe-apply pipeline (real file IO + git diff)
     let fm = FileManager.default
@@ -1316,6 +1371,28 @@ func runChecks() async {
         let decodedTokenDoc = try JSONDecoder().decode(Document.self, from: tokenJSON)
         c.check("p28 tokens round-trip", decodedTokenDoc.designTokens.count == 3)
 
+        // Phase 41 — design system and theme engine.
+        c.check("p41 theme library includes requested themes",
+                DesignThemeLibrary.theme(id: "apple.glass") != nil &&
+                DesignThemeLibrary.theme(id: "ableton.inspired") != nil &&
+                DesignThemeLibrary.theme(id: "logic.inspired") != nil &&
+                DesignThemeLibrary.all.count >= 15)
+        let appleGlass = DesignThemeLibrary.theme(id: "apple.glass")!
+        c.check("p41 theme covers expanded token kinds",
+                Set(appleGlass.tokens.map(\.kind)).isSuperset(of: [.color, .typography, .spacing, .cornerRadius, .border, .shadow, .elevation, .opacity, .material, .glass]))
+        c.check("p41 apple material tokens present",
+                DesignThemeLibrary.all.flatMap(\.tokens).contains { token in
+                    if case .material(let material) = token.value { return material.contains("Material") }
+                    return false
+                })
+        let themeDoc = Document(name: "ThemeDoc", roots: [tokenLayer], designTokens: appleGlass.tokens)
+        let themeSource = (try? CodeGenService().generate(themeDoc).contents) ?? ""
+        c.check("p41 codegen emits glass token", themeSource.contains("Glass"))
+        c.check("p41 codegen emits border token", themeSource.contains("width: CGFloat"))
+        let themeJSON = try JSONEncoder().encode(themeDoc)
+        let decodedThemeDoc = try JSONDecoder().decode(Document.self, from: themeJSON)
+        c.check("p41 theme tokens round-trip", decodedThemeDoc.designTokens.count == appleGlass.tokens.count)
+
         // Phase 29 — target app injection v2.
         let injectDir = fm.temporaryDirectory.appendingPathComponent("vua-p29-\(UUID().uuidString)")
         try fm.createDirectory(at: injectDir, withIntermediateDirectories: true)
@@ -1506,13 +1583,21 @@ func runChecks() async {
     // MARK: Phase 19 — Control asset library expansion
     do {
         let assets = ControlAssetLibrary.all
-        c.check("p19 control assets total", assets.count == 120)
+        c.check("p19 control assets total", assets.count >= 300)
         c.check("p19 at least 20 knobs", ControlAssetLibrary.assets(in: .knob).count >= 20)
         c.check("p19 at least 20 faders", ControlAssetLibrary.assets(in: .fader).count >= 20)
         c.check("p19 at least 20 sliders", ControlAssetLibrary.assets(in: .slider).count >= 20)
         c.check("p19 at least 20 buttons", ControlAssetLibrary.assets(in: .button).count >= 20)
         c.check("p19 at least 20 toggles", ControlAssetLibrary.assets(in: .toggle).count >= 20)
         c.check("p19 at least 20 meters", ControlAssetLibrary.assets(in: .meter).count >= 20)
+        c.check("p42 at least 30 displays", ControlAssetLibrary.assets(in: .display).count >= 30)
+        c.check("p42 at least 30 panels", ControlAssetLibrary.assets(in: .panel).count >= 30)
+        c.check("p42 pro audio knobs/faders expanded",
+                ControlAssetLibrary.assets(in: .knob).count >= 60 &&
+                ControlAssetLibrary.assets(in: .fader).count >= 60)
+        c.check("p42 pro audio switches/meters expanded",
+                ControlAssetLibrary.assets(in: .toggle).count >= 40 &&
+                ControlAssetLibrary.assets(in: .meter).count >= 40)
 
         c.check("p19 ids unique", Set(assets.map { $0.id }).count == assets.count)
         for category in ControlAssetCategory.allCases {
@@ -1536,7 +1621,7 @@ func runChecks() async {
                 zip(assets, layers).allSatisfy { asset, layer in asset.category.layerKind == layer.kind })
         c.check("p19 control metadata present",
                 zip(assets, layers).allSatisfy { asset, layer in
-                    asset.category == .button ? layer.control != nil : layer.control != nil
+                    asset.category == .panel ? layer.control == nil : layer.control != nil
                 })
         c.check("p19 meter assets are readout metadata",
                 ControlAssetLibrary.assets(in: .meter).allSatisfy {
@@ -1554,11 +1639,16 @@ func runChecks() async {
         c.check("p19 codegen includes button", src.contains("Button(action:"))
         c.check("p19 codegen includes toggle", src.contains("Toggle("))
         c.check("p19 codegen includes meter", src.contains("MeterView("))
+        c.check("p42 codegen includes display/panel layers", src.contains("Text(") && src.contains("RoundedRectangle"))
         c.check("p19 generated SwiftUI braces balanced",
                 src.filter { $0 == "{" }.count == src.filter { $0 == "}" }.count)
 
         let search = ControlAssetLibrary.search("neon", in: .meter)
         c.check("p19 asset search works", !search.isEmpty && search.allSatisfy { $0.tags.contains("neon") || $0.visualStyle.family == "Neon" })
+        c.check("p42 audio family search works",
+                !ControlAssetLibrary.search("ableton-inspired").isEmpty &&
+                !ControlAssetLibrary.search("logic-inspired").isEmpty &&
+                !ControlAssetLibrary.search("glass-inspired").isEmpty)
     }
 
     // MARK: Phase 17 — Functional asset metadata

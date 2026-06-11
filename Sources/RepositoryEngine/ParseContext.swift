@@ -56,7 +56,8 @@ struct ParseContext {
 
     private mutating func parseNamedCall(name: String, call: FunctionCallExprSyntax) -> Layer? {
         switch name {
-        case "VStack", "HStack", "ZStack", "Group", "NavigationStack", "NavigationView", "List", "Form", "Section":
+        case "VStack", "HStack", "ZStack", "Group", "NavigationStack", "NavigationSplitView", "NavigationView",
+             "TabView", "List", "Form", "Section", "Toolbar", "Menu", "DisclosureGroup", "ViewThatFits", "AnyLayout":
             var layer = Layer(name: name, kind: .container)
             let children = parseChildren(of: call)
             layer.children = children
@@ -66,8 +67,14 @@ struct ParseContext {
                 return children[0]
             }
             axisByLayer[layer.id] = (name == "HStack") ? .horizontal
-                : (name == "ZStack" || name == "Group") ? .stack : .vertical
+                : (name == "ZStack" || name == "Group" || name == "TabView" || name == "ViewThatFits") ? .stack : .vertical
             if name != "Group" { layer.kind = .container }
+            return layer
+        case "GeometryReader", "Canvas", "TimelineView", "ForEach":
+            var layer = Layer(name: name, kind: .container, isLocked: name == "Canvas" || name == "TimelineView")
+            layer.children = parseChildren(of: call)
+            layer.notes = "\(name) imported as a partial SwiftUI structure. Source is preserved; unsupported runtime behaviour remains locked."
+            axisByLayer[layer.id] = .vertical
             return layer
         case "Text":
             return leaf(.label, name: "Text", text: Self.firstStringArgument(call))
@@ -84,8 +91,16 @@ struct ParseContext {
             return leaf(.slider, name: "Slider")
         case "TextField":
             return leaf(.text, name: "TextField", text: Self.firstStringArgument(call) ?? "Text Field")
+        case "SecureField":
+            return leaf(.text, name: "SecureField", text: Self.firstStringArgument(call) ?? "Secure Field")
         case "Picker":
             return leaf(.control, name: "Picker", text: Self.firstStringArgument(call) ?? "Picker")
+        case "Stepper":
+            return leaf(.control, name: "Stepper", text: Self.firstStringArgument(call) ?? "Stepper")
+        case "DatePicker":
+            return leaf(.control, name: "DatePicker", text: Self.firstStringArgument(call) ?? "Date Picker")
+        case "Link":
+            return leaf(.button, name: "Link", text: Self.firstStringArgument(call) ?? "Link")
         case "Spacer":
             return leaf(.container, name: "Spacer")
         case "Rectangle":
@@ -98,8 +113,13 @@ struct ParseContext {
             return leaf(.shape(.capsule), name: "Capsule")
         case "Divider":
             return leaf(.shape(.divider), name: "Divider")
+        case "UIViewRepresentable", "NSViewRepresentable":
+            return lockedPlaceholder(name)
         default:
             // Unknown view type → custom layer preserving its type name.
+            if name.hasSuffix("Representable") || name.hasSuffix("Layout") {
+                return lockedPlaceholder(name)
+            }
             return leaf(.custom(typeName: name), name: name)
         }
     }
@@ -110,13 +130,34 @@ struct ParseContext {
               text: text)
     }
 
+    private func lockedPlaceholder(_ name: String) -> Layer {
+        Layer(name: name,
+              kind: .custom(typeName: name),
+              frame: VRect(origin: .zero, size: VSize(width: 180, height: 80)),
+              isLocked: true,
+              notes: "\(name) is preserved as a locked placeholder because its implementation cannot be safely edited visually yet.")
+    }
+
     private mutating func parseChildren(of call: FunctionCallExprSyntax) -> [Layer] {
-        guard let closure = call.trailingClosure else { return [] }
+        var layers: [Layer] = []
+        for arg in call.arguments {
+            if let closure = arg.expression.as(ClosureExprSyntax.self) {
+                layers.append(contentsOf: parseChildren(in: closure))
+            }
+        }
+        if let closure = call.trailingClosure {
+            layers.append(contentsOf: parseChildren(in: closure))
+        }
+        for closure in call.additionalTrailingClosures {
+            layers.append(contentsOf: parseChildren(in: closure.closure))
+        }
+        return layers
+    }
+
+    private mutating func parseChildren(in closure: ClosureExprSyntax) -> [Layer] {
         var layers: [Layer] = []
         for item in closure.statements {
-            if let expr = item.item.as(ExprSyntax.self), let layer = parse(expr) {
-                layers.append(layer)
-            }
+            if let expr = item.item.as(ExprSyntax.self), let layer = parse(expr) { layers.append(layer) }
         }
         return layers
     }
