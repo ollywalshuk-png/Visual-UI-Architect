@@ -56,7 +56,7 @@ rebuild app bundle → update README → commit when green.
 | P19 | Control asset library expansion | ✅ done | 120 functional control assets: 20× knob/fader/slider/button/switch/meter, metadata + live previews |
 | P20 | Control behaviour engine | ✅ done | behaviour profiles + inspector binding/MIDI/automation controls + codegen metadata comments |
 | P21 | Refined line tool | ✅ done | line geometry, dashes/dots/caps/joins/arrows/connectors/snap metadata + diagnostics |
-| P22 | Existing UI import polish | 🔜 next | clearer previews/provenance/no-anchor messaging |
+| P22 | Existing UI import polish | ✅ done | explicit temporary-layer import, provenance display, no-anchor apply blocking |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when
 the project was restored from a Google Drive zip export (Drive strips

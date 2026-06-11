@@ -24,6 +24,8 @@ struct InspectorView: View {
                     }
                 }
 
+                importProvenanceSection
+
                 Section("Geometry") {
                     numberRow("X", \.frame.origin.x, layer)
                     numberRow("Y", \.frame.origin.y, layer)
@@ -75,6 +77,25 @@ struct InspectorView: View {
                 title: "No Selection",
                 systemImage: "cursorarrow.rays",
                 description: "Select a layer to edit its properties.")
+        }
+    }
+
+    @ViewBuilder
+    private var importProvenanceSection: some View {
+        if let path = store.importedSourcePath {
+            Section("Source Provenance") {
+                LabeledContent("View") { Text(store.importedViewName ?? "Imported UI") }
+                LabeledContent("Source") {
+                    Text(path).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                }
+                LabeledContent("Anchors") {
+                    Text(store.importedSourceHasAnchors == false ? "Missing" : "Present")
+                        .foregroundStyle(store.importedSourceHasAnchors == false ? .orange : .secondary)
+                }
+                if let date = store.importedAt {
+                    LabeledContent("Imported") { Text(date.formatted(date: .abbreviated, time: .shortened)) }
+                }
+            }
         }
     }
 

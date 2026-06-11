@@ -234,7 +234,16 @@ system keeps design and production-quality code in sync.
   and validation reports zero-length lines, invisible strokes, invalid arrows,
   unsupported/generated connector handles, and lines outside the canvas.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 358 checks).
+- **Phase 22 — Existing UI import polish (done):** the Import UI workflow now
+  makes no-anchor imports explicit: the sheet warns that Apply to Source will
+  be blocked and requires choosing **Import as editable temporary layers**.
+  The toolbar reflects imported state, Repository shows the imported source
+  with anchor status and timestamp, and the inspector shows source provenance.
+  Apply-to-source now explains no-anchor blocking directly instead of silently
+  producing no writes. Candidate previews show clearer source context while
+  unsupported constructs remain surfaced as diagnostics.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 363 checks).
 
 ## Requirements
 

@@ -25,6 +25,7 @@ struct RepositoryBrowserView: View {
                     description: "Open a folder to browse SwiftUI views and assets.")
             } else {
                 List {
+                    importedSourceSection
                     section("SwiftUI Views", role: .swiftUIView, icon: "rectangle.3.group")
                     section("Sources", role: .swiftSource, icon: "swift")
                     section("Assets", role: .asset, icon: "photo")
@@ -38,6 +39,29 @@ struct RepositoryBrowserView: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var importedSourceSection: some View {
+        if let path = store.importedSourcePath {
+            Section("Imported Source") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(store.importedViewName ?? URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent,
+                          systemImage: store.importedSourceHasAnchors == false ? "link.badge.plus" : "link")
+                        .fontWeight(.medium)
+                    Text(path).font(.caption2).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
+                    HStack {
+                        Text(store.importedSourceHasAnchors == false ? "Temporary layers, no anchors" : "Anchored for safe apply")
+                            .font(.caption2)
+                            .foregroundStyle(store.importedSourceHasAnchors == false ? .orange : .green)
+                        if let date = store.importedAt {
+                            Text(date.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
         }
     }
@@ -58,6 +82,10 @@ struct RepositoryBrowserView: View {
                             }
                         }
                         Spacer()
+                        if file.absolutePath == store.importedSourcePath {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundStyle(store.importedSourceHasAnchors == false ? .orange : .green)
+                        }
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {

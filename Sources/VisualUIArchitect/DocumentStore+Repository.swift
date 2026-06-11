@@ -87,6 +87,10 @@ extension DocumentStore {
             repositoryStatus = "Blocked: \(openedFileName ?? "the source file") changed on disk since import. Re-import before applying."
             return nil
         }
+        if importedSourcePath != nil && importedSourceHasAnchors == false {
+            repositoryStatus = "Apply blocked: this UI was imported as editable temporary layers because the source has no anchors. Add accessibilityIdentifier anchors in source, then re-import."
+            return nil
+        }
         do {
             let result = try SafeApplyPipeline().apply(document: document, repoRoot: root, runBuild: runBuild)
             switch result.blockedAt {

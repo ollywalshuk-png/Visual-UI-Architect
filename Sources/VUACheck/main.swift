@@ -1632,6 +1632,8 @@ func runChecks() async {
         let plain = ExistingUIImport.candidates(inSource: noAnchorSrc, filePath: "/tmp/Plain.swift").first!
         c.check("no-anchor candidate flagged", !plain.hasAnchors &&
                 plain.warnings.contains { $0.localizedCaseInsensitiveContains("anchor") })
+        c.check("p22 no-anchor warning is explicit",
+                plain.warnings.contains { $0.contains("round-trip editing needs anchors") })
 
         // Import from a real temp file → editable layers + source hash.
         let dir = fm.temporaryDirectory.appendingPathComponent("vua-import-\(UUID().uuidString)")
@@ -1644,8 +1646,18 @@ func runChecks() async {
         let imported = ExistingUIImport.importCandidate(fileCands.first { $0.viewName == "HomeScreen" }!)
         c.check("import parses into layers", (imported?.view.roots.first?.flattened().count ?? 0) > 1)
         c.check("import stores source hash", !(imported?.sourceHash.isEmpty ?? true))
+        c.check("p22 provenance stores source hash", imported?.sourceHash == ExistingUIImport.sourceHash(supportedSrc))
         c.check("import preserves anchors", imported?.view.roots.flatMap { $0.flattened() }
                 .contains { $0.binding?.anchorID == "startButton" } ?? false)
+
+        let plainURL = dir.appendingPathComponent("Plain.swift")
+        try noAnchorSrc.data(using: .utf8)!.write(to: plainURL)
+        let plainCandidate = ExistingUIImport.candidates(inFile: plainURL).first!
+        let beforePlainImport = (try? String(contentsOf: plainURL, encoding: .utf8)) ?? ""
+        let plainImport = ExistingUIImport.importCandidate(plainCandidate)
+        let afterPlainImport = (try? String(contentsOf: plainURL, encoding: .utf8)) ?? ""
+        c.check("p22 no-anchor import is non-destructive", beforePlainImport == afterPlainImport)
+        c.check("p22 no-anchor import remains temporary", plainImport?.hasAnchors == false)
 
         // Source-change detection: untouched file is unchanged; edited file changed.
         let hash = imported!.sourceHash
@@ -1670,6 +1682,8 @@ func runChecks() async {
         let repoCands = ExistingUIImport.scanRepository(repo)
         c.check("repo scan finds views", repoCands.contains { $0.viewName == "HomeScreen" })
         c.check("repo scan sets repoRoot", repoCands.allSatisfy { $0.repoRoot != nil })
+        c.check("p22 imported source appears in repo scan",
+                repoCands.contains { $0.filePath.hasSuffix("Sources/App/Home.swift") && $0.viewName == "HomeScreen" })
         let proj = ExistingUIImport.detectProject(repo)
         c.check("project detects Package.swift + Sources", proj.hasPackageSwift && proj.uiDirectories.contains("Sources"))
     } catch {

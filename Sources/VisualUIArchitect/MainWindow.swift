@@ -160,8 +160,13 @@ struct MainWindow: View {
             }
             .help("Export a portable SwiftUI package (assets + controls + manifests)")
 
-            Button { showImportUI = true } label: { Label("Import UI", systemImage: "square.and.arrow.down.on.square") }
-                .help("Import an existing SwiftUI file or app/repo into the canvas")
+            Button { showImportUI = true } label: {
+                Label(store.importedViewName == nil ? "Import UI" : "Imported UI",
+                      systemImage: store.importedSourceHasAnchors == false ? "square.and.arrow.down.on.square.fill" : "square.and.arrow.down.on.square")
+            }
+            .help(store.importedViewName == nil
+                  ? "Import an existing SwiftUI file or app/repo into the canvas"
+                  : "Imported \(store.importedViewName ?? "UI") from \(store.importedSourcePath ?? "source")")
 
             Button { showWorkspace = true } label: { Label("Workspace", systemImage: "checkmark.shield") }
                 .help("Workspace safety diagnostics")

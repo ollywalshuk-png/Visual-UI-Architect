@@ -45,6 +45,8 @@ extension DocumentStore {
         importedSourcePath = candidate.filePath
         importedSourceHash = imported.sourceHash
         importedViewName = imported.view.typeName
+        importedSourceHasAnchors = imported.hasAnchors
+        importedAt = Date()
         if let repoRoot = candidate.repoRoot {
             repositoryRoot = URL(fileURLWithPath: repoRoot)
         } else {
@@ -53,7 +55,7 @@ extension DocumentStore {
         repositoryFiles = scanRepositoryFiles()
 
         if !imported.hasAnchors {
-            repositoryStatus = "Imported \(imported.view.typeName). No anchors found — round-trip needs anchors."
+            repositoryStatus = "Imported \(imported.view.typeName) as editable temporary layers. No anchors found, so Apply to Source is disabled until source anchors exist."
         } else {
             repositoryStatus = "Imported \(imported.view.typeName) from \(url.lastPathComponent)."
         }

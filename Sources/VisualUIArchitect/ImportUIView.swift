@@ -15,9 +15,15 @@ struct ImportUIView: View {
     @State private var scannedLabel: String = ""
     @State private var project: ExistingUIImport.ProjectInfo?
     @State private var previewSource: String = ""
+    @State private var importTemporaryLayers = false
 
     private var selected: ExistingUIImport.Candidate? {
         candidates.first { $0.id == selection }
+    }
+
+    private var canImportSelected: Bool {
+        guard let selected else { return false }
+        return selected.hasAnchors || importTemporaryLayers
     }
 
     var body: some View {
@@ -50,11 +56,11 @@ struct ImportUIView: View {
                 }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
-                Button("Import") {
+                Button(selected?.hasAnchors == false ? "Import Temporary Layers" : "Import") {
                     if let selected, store.importExistingUI(selected) { dismiss() }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(selected == nil)
+                .disabled(!canImportSelected)
             }
             .padding()
         }
@@ -113,6 +119,18 @@ struct ImportUIView: View {
                     stat("Unsupported", "\(c.unsupportedElementCount)")
                     stat("Anchors", c.hasAnchors ? "yes" : "no")
                 }
+                if !c.hasAnchors {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("No source anchors were found. Import will be editable on the canvas, but Apply to Source will be blocked until the source has accessibilityIdentifier anchors and is re-imported.",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                        Toggle("Import as editable temporary layers", isOn: $importTemporaryLayers)
+                            .toggleStyle(.checkbox)
+                    }
+                    .padding(8)
+                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                }
                 if !c.warnings.isEmpty {
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(Array(c.warnings.enumerated()), id: \.offset) { _, w in
@@ -122,7 +140,14 @@ struct ImportUIView: View {
                     }
                 }
                 Divider()
-                Text("Source preview").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("Source preview").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if !previewSource.isEmpty {
+                        Text("\(previewSource.split(separator: "\n", omittingEmptySubsequences: false).count) lines")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
                 ScrollView {
                     Text(previewSource)
                         .font(.system(.caption, design: .monospaced))
@@ -183,10 +208,12 @@ struct ImportUIView: View {
 
     private func selectFirst() {
         selection = candidates.first(where: { !$0.isPreviewOnly })?.id ?? candidates.first?.id
+        importTemporaryLayers = false
         loadPreview()
     }
 
     private func loadPreview() {
+        importTemporaryLayers = false
         guard let c = selected,
               let source = try? String(contentsOf: URL(fileURLWithPath: c.filePath), encoding: .utf8) else {
             previewSource = ""

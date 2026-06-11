@@ -27,6 +27,8 @@ final class DocumentStore: ObservableObject {
     @Published var importedSourcePath: String?
     @Published var importedSourceHash: String?
     @Published var importedViewName: String?
+    @Published var importedSourceHasAnchors: Bool?
+    @Published var importedAt: Date?
     @Published var repositoryStatus: String = ""
     var fileWatcher: FileWatcher?
     /// Repeating autosave timer (see DocumentStore+Persistence.swift).
