@@ -138,7 +138,9 @@ public struct AssetControlBinding: Codable, Hashable, Sendable {
             parameterID: parameterID,
             displayName: displayName ?? parameterID,
             minValue: minValue, maxValue: maxValue, defaultValue: defaultV,
-            unit: unit, isContinuous: isContinuous, stepCount: stepCount)
+            unit: unit, isContinuous: isContinuous, stepCount: stepCount,
+            midiCC: midiCC, auParameterID: auParameterID,
+            automationEnabled: automationEnabled)
     }
 }
 

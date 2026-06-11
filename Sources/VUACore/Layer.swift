@@ -170,6 +170,17 @@ public struct ControlMetadata: Codable, Hashable, Sendable {
     public var isContinuous: Bool
     /// Number of discrete steps when not continuous (e.g. a 3-way switch).
     public var stepCount: Int?
+    /// Phase 20: optional behaviour metadata. Optional fields decode from
+    /// older documents without migration because missing optional keys become nil.
+    public var behaviourType: String?
+    public var interactionMode: String?
+    public var responseCurve: String?
+    public var bindingName: String?
+    public var midiCC: Int?
+    public var auParameterID: String?
+    public var automationEnabled: Bool?
+    public var rotationStartDegrees: Double?
+    public var rotationEndDegrees: Double?
 
     public init(
         parameterID: String,
@@ -179,7 +190,16 @@ public struct ControlMetadata: Codable, Hashable, Sendable {
         defaultValue: Double = 0,
         unit: ControlUnit = .generic,
         isContinuous: Bool = true,
-        stepCount: Int? = nil
+        stepCount: Int? = nil,
+        behaviourType: String? = nil,
+        interactionMode: String? = nil,
+        responseCurve: String? = nil,
+        bindingName: String? = nil,
+        midiCC: Int? = nil,
+        auParameterID: String? = nil,
+        automationEnabled: Bool? = nil,
+        rotationStartDegrees: Double? = nil,
+        rotationEndDegrees: Double? = nil
     ) {
         self.parameterID = parameterID
         self.displayName = displayName ?? parameterID
@@ -189,6 +209,15 @@ public struct ControlMetadata: Codable, Hashable, Sendable {
         self.unit = unit
         self.isContinuous = isContinuous
         self.stepCount = stepCount
+        self.behaviourType = behaviourType
+        self.interactionMode = interactionMode
+        self.responseCurve = responseCurve
+        self.bindingName = bindingName
+        self.midiCC = midiCC
+        self.auParameterID = auParameterID
+        self.automationEnabled = automationEnabled
+        self.rotationStartDegrees = rotationStartDegrees
+        self.rotationEndDegrees = rotationEndDegrees
     }
 
     /// Clamps a value to the parameter's range.

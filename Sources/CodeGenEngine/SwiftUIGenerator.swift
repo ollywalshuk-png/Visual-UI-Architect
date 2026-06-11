@@ -1,5 +1,6 @@
 import Foundation
 import VUACore
+import ControlBehaviourEngine
 
 /// Generates production-quality SwiftUI from the layer tree.
 ///
@@ -72,6 +73,20 @@ public struct SwiftUIGenerator: CodeGenerator {
         if let c = layer.control {
             let unit = c.unit.symbol.isEmpty ? "" : " \(c.unit.symbol)"
             b.line("// AU param: \(c.parameterID) — \(fmt(c.minValue))…\(fmt(c.maxValue))\(unit), default \(fmt(c.defaultValue))\(unit)\(c.isContinuous ? "" : ", \(c.stepCount ?? 2) steps")")
+            if let behaviour = ControlBehaviourResolver.profile(for: layer) {
+                b.line("// Behaviour: \(behaviour.type.displayName), \(behaviour.interactionMode.rawValue), \(behaviour.responseCurve.rawValue), \(behaviour.isContinuous ? "continuous" : "\(behaviour.stepCount ?? 2)-step")")
+                if let binding = behaviour.bindingName, !binding.isEmpty {
+                    b.line("// Binding target: \(binding)")
+                } else {
+                    b.line("// Binding target: TODO connect \(behaviour.parameterID) to app/AU state")
+                }
+                if let midi = behaviour.midiCC {
+                    b.line("// MIDI CC: \(midi)")
+                }
+                if behaviour.automationEnabled {
+                    b.line("// Automation: enabled")
+                }
+            }
         }
         b.block("Group {") { b in
             emitContent(layer, into: &b, document: document)

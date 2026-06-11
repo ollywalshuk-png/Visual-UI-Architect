@@ -159,14 +159,21 @@ public struct ControlAsset: Identifiable, Hashable, Sendable {
     }
 
     public func makeLayer(at origin: VPoint = .zero) -> Layer {
-        Layer(
+        var control = metadata.binding.toControlMetadata()
+        control?.behaviourType = controlBehaviourType
+        control?.interactionMode = interactionMode
+        control?.responseCurve = responseCurve
+        control?.rotationStartDegrees = rotation?.minDegrees
+        control?.rotationEndDegrees = rotation?.maxDegrees
+        control?.automationEnabled = metadata.binding.automationEnabled
+        return Layer(
             name: name,
             kind: category.layerKind,
             frame: VRect(origin: origin, size: defaultSize),
             style: layerStyle,
             text: layerText,
             constraints: [],
-            control: metadata.binding.toControlMetadata(),
+            control: control,
             role: .control,
             notes: "Control asset: \(behaviour.displayName). Accessibility: \(accessibilityLabelTemplate).",
             tags: tags + [category.rawValue, role.rawValue, function.rawValue])
@@ -219,6 +226,37 @@ public struct ControlAsset: Identifiable, Hashable, Sendable {
         case .buttonPress, .toggleSwitch: return .tap
         case .meterReadout: return .none
         }
+    }
+
+    private var controlBehaviourType: String {
+        switch behaviour {
+        case .rotaryKnob: return "rotaryKnob"
+        case .endlessEncoder: return "endlessEncoder"
+        case .steppedKnob: return "steppedKnob"
+        case .bipolarKnob: return "bipolarKnob"
+        case .verticalFader: return "verticalFader"
+        case .horizontalSlider: return "horizontalSlider"
+        case .buttonPress: return "buttonPress"
+        case .toggleSwitch: return "toggleSwitch"
+        case .meterReadout: return "meterReadout"
+        }
+    }
+
+    private var interactionMode: String {
+        switch behaviour {
+        case .rotaryKnob: return "verticalDragRotary"
+        case .endlessEncoder: return "relative"
+        case .steppedKnob: return "steppedSelector"
+        case .bipolarKnob: return "bipolarCenter"
+        case .verticalFader, .horizontalSlider: return "linearDrag"
+        case .buttonPress: return "press"
+        case .toggleSwitch: return "toggle"
+        case .meterReadout: return "readOnly"
+        }
+    }
+
+    private var responseCurve: String {
+        behaviour == .bipolarKnob ? "bipolar" : "linear"
     }
 
     private var rotation: RotationBehaviour? {

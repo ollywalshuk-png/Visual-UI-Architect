@@ -213,7 +213,18 @@ system keeps design and production-quality code in sync.
   assets create real non-zero layers with `ControlMetadata` so generated
   SwiftUI still emits buildable controls including `MeterView`.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 331 checks).
+- **Phase 20 — Control behaviour engine (done):** new
+  **`ControlBehaviourEngine`** models how controls behave, not just how they
+  look: rotary knobs, endless encoders, stepped and bipolar knobs, vertical
+  faders, horizontal sliders, button presses, toggles, and read-only meters.
+  Behaviour profiles include interaction mode, drag axis, rotation envelope,
+  min/default/max, normalised value, unit, response curve, step/snap metadata,
+  binding target, MIDI CC, AU parameter id, and automation flag. The inspector
+  now exposes behaviour type, interaction, response curve, rotary angles,
+  binding, AU id, MIDI CC, and automation. Generated SwiftUI remains buildable
+  and emits behaviour/binding comments instead of fake app logic.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 348 checks).
 
 ## Requirements
 

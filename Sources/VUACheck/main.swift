@@ -21,6 +21,7 @@ import BuildIntelligenceEngine
 import HandoffGeneratorEngine
 import UIQualityEngine
 import ComponentEngine
+import ControlBehaviourEngine
 
 // A dependency-free assertion harness so the engines can be verified with
 // `swift run VUACheck` on a machine that has no Xcode (no XCTest).
@@ -1421,6 +1422,86 @@ func runChecks() async {
     } catch {
         FileHandle.standardError.write(Data("p17 exception: \(error)\n".utf8))
         c.check("p17 exception", false)
+    }
+
+    // MARK: Phase 20 — Control behaviour engine
+    do {
+        let knobMeta = ControlMetadata(parameterID: "cutoff", displayName: "Cutoff",
+                                       minValue: 20, maxValue: 20000, defaultValue: 1000,
+                                       unit: .hertz, behaviourType: ControlBehaviourType.rotaryKnob.rawValue,
+                                       interactionMode: ControlInteractionMode.verticalDragRotary.rawValue,
+                                       responseCurve: ControlResponseCurve.linear.rawValue,
+                                       bindingName: "synth.cutoff", midiCC: 74,
+                                       auParameterID: "filter.cutoff", automationEnabled: true,
+                                       rotationStartDegrees: -135, rotationEndDegrees: 135)
+        let knobLayer = Layer(name: "Cutoff", kind: .knob, control: knobMeta)
+        let knobProfile = ControlBehaviourResolver.profile(for: knobLayer)
+        c.check("p20 behaviour maps range", knobProfile?.minValue == 20 && knobProfile?.maxValue == 20000)
+        c.check("p20 knob normalisation", abs((knobProfile?.normalizedValue ?? 0) - knobMeta.normalizedDefault) < 0.0001)
+        c.check("p20 knob metadata links", knobProfile?.bindingName == "synth.cutoff" && knobProfile?.midiCC == 74 && knobProfile?.automationEnabled == true)
+
+        let bipolar = Layer(name: "Pan", kind: .knob,
+                            control: ControlMetadata(parameterID: "pan", minValue: -100, maxValue: 100,
+                                                     defaultValue: 0, unit: .percent,
+                                                     behaviourType: ControlBehaviourType.bipolarKnob.rawValue))
+        c.check("p20 bipolar knob centre", ControlBehaviourResolver.profile(for: bipolar)?.normalizedValue == 0.5)
+
+        let stepped = Layer(name: "Mode", kind: .knob,
+                            control: ControlMetadata(parameterID: "mode", minValue: 0, maxValue: 3,
+                                                     defaultValue: 1.8, isContinuous: false, stepCount: 4,
+                                                     behaviourType: ControlBehaviourType.steppedKnob.rawValue))
+        c.check("p20 stepped clamps", ControlBehaviourResolver.profile(for: stepped)?.clamped(1.8) == 2)
+        c.check("p20 stepped mode", ControlBehaviourResolver.profile(for: stepped)?.snapBehaviour == .step)
+
+        let fader = Layer(name: "Level", kind: .fader,
+                          control: ControlMetadata(parameterID: "level", minValue: -60, maxValue: 6,
+                                                   defaultValue: 0, unit: .decibels,
+                                                   behaviourType: ControlBehaviourType.verticalFader.rawValue))
+        c.check("p20 fader vertical behaviour", ControlBehaviourResolver.profile(for: fader)?.dragAxis == .vertical)
+
+        let slider = Layer(name: "Mix", kind: .slider,
+                           control: ControlMetadata(parameterID: "mix", minValue: 0, maxValue: 100,
+                                                    defaultValue: 50, unit: .percent,
+                                                    behaviourType: ControlBehaviourType.horizontalSlider.rawValue))
+        c.check("p20 slider horizontal behaviour", ControlBehaviourResolver.profile(for: slider)?.dragAxis == .horizontal)
+
+        let button = Layer(name: "Trigger", kind: .button,
+                           control: ControlMetadata(parameterID: "trigger", minValue: 0, maxValue: 1,
+                                                    defaultValue: 0, isContinuous: false, stepCount: 2,
+                                                    behaviourType: ControlBehaviourType.buttonPress.rawValue))
+        c.check("p20 button validates", ControlBehaviourDiagnostics.validate(button).isEmpty)
+
+        let toggle = Layer(name: "Bypass", kind: .toggle,
+                           control: ControlMetadata(parameterID: "bypass", minValue: 0, maxValue: 1,
+                                                    defaultValue: 1, isContinuous: false, stepCount: 2,
+                                                    behaviourType: ControlBehaviourType.toggleSwitch.rawValue))
+        c.check("p20 toggle validates", ControlBehaviourDiagnostics.validate(toggle).isEmpty)
+
+        let meter = Layer(name: "Output", kind: .meter,
+                          control: ControlMetadata(parameterID: "output", minValue: -60, maxValue: 0,
+                                                   defaultValue: -18, unit: .decibels,
+                                                   behaviourType: ControlBehaviourType.meterReadout.rawValue,
+                                                   interactionMode: ControlInteractionMode.readOnly.rawValue))
+        c.check("p20 meter read-only", ControlBehaviourResolver.profile(for: meter)?.interactionMode == .readOnly)
+
+        let missing = Layer(name: "Unbound", kind: .knob)
+        c.check("p20 missing behaviour diagnostic",
+                ControlBehaviourDiagnostics.validate(missing).contains { $0.code == .missingBehaviour })
+
+        let badMidi = Layer(name: "Bad MIDI", kind: .slider,
+                            control: ControlMetadata(parameterID: "bad", minValue: 0, maxValue: 1,
+                                                     defaultValue: 0.5, midiCC: 200))
+        c.check("p20 invalid midi diagnostic",
+                ControlBehaviourDiagnostics.validate(badMidi).contains { $0.code == .invalidMIDI })
+
+        let assetLayer = ControlAssetLibrary.assets(in: .knob).first!.makeLayer()
+        c.check("p20 asset carries behaviour metadata",
+                assetLayer.control?.behaviourType != nil && ControlBehaviourResolver.profile(for: assetLayer) != nil)
+
+        let src = (try? CodeGenService().generate(Document(name: "Behaviour", roots: [knobLayer])).contents) ?? ""
+        c.check("p20 codegen emits behaviour comment", src.contains("// Behaviour: Rotary Knob"))
+        c.check("p20 codegen emits binding TODO/comment", src.contains("// Binding target: synth.cutoff"))
+        c.check("p20 codegen emits midi comment", src.contains("// MIDI CC: 74"))
     }
 
     // MARK: Phase 18 — Existing UI import / screen loader

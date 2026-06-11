@@ -1,5 +1,6 @@
 import SwiftUI
 import VUACore
+import ControlBehaviourEngine
 
 /// Inspector for the selected layer: identity, geometry, and style. Edits flow
 /// through the store so they participate in undo/redo and validation.
@@ -49,6 +50,7 @@ struct InspectorView: View {
 
                 if layer.kind.isPluginControl {
                     controlSection(layer)
+                    behaviourSection(layer)
                 }
 
                 if layer.kind == .image || layer.kind == .background {
@@ -181,6 +183,127 @@ struct InspectorView: View {
                     .textFieldStyle(.roundedBorder).frame(width: 60)
                 }
             }
+        }
+    }
+
+    // MARK: - Behaviour section
+
+    @ViewBuilder
+    private func behaviourSection(_ layer: Layer) -> some View {
+        let c = layer.control ?? ControlBehaviourResolver.defaultMetadata(for: layer.kind, name: layer.name)
+            ?? ControlMetadata(parameterID: layer.name.lowercased())
+        let behaviour = ControlBehaviourResolver.profile(for: layer)
+        Section("Behaviour") {
+            LabeledContent("Type") {
+                Picker("", selection: Binding(
+                    get: { ControlBehaviourType(rawValue: c.behaviourType ?? "") ?? behaviour?.type ?? .horizontalSlider },
+                    set: { v in store.updateSelectedControl { meta in
+                        meta.behaviourType = v.rawValue
+                        applyBehaviourDefaults(v, to: &meta)
+                    } })) {
+                    ForEach(ControlBehaviourType.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden()
+            }
+            LabeledContent("Interaction") {
+                Picker("", selection: Binding(
+                    get: { ControlInteractionMode(rawValue: c.interactionMode ?? "") ?? behaviour?.interactionMode ?? .linearDrag },
+                    set: { v in store.updateSelectedControl { $0.interactionMode = v.rawValue } })) {
+                    ForEach(ControlInteractionMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .labelsHidden()
+            }
+            LabeledContent("Response") {
+                Picker("", selection: Binding(
+                    get: { ControlResponseCurve(rawValue: c.responseCurve ?? "") ?? behaviour?.responseCurve ?? .linear },
+                    set: { v in store.updateSelectedControl { $0.responseCurve = v.rawValue } })) {
+                    ForEach(ControlResponseCurve.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }
+                .labelsHidden()
+            }
+            if c.behaviourType == ControlBehaviourType.rotaryKnob.rawValue ||
+                c.behaviourType == ControlBehaviourType.steppedKnob.rawValue ||
+                c.behaviourType == ControlBehaviourType.bipolarKnob.rawValue ||
+                c.behaviourType == ControlBehaviourType.endlessEncoder.rawValue ||
+                layer.kind == .knob {
+                LabeledContent("Start Angle") {
+                    TextField("-135", value: Binding(
+                        get: { c.rotationStartDegrees ?? -135 },
+                        set: { v in store.updateSelectedControl { $0.rotationStartDegrees = v } }),
+                        format: .number.precision(.fractionLength(0...1)))
+                    .textFieldStyle(.roundedBorder).frame(width: 80)
+                }
+                LabeledContent("End Angle") {
+                    TextField("135", value: Binding(
+                        get: { c.rotationEndDegrees ?? 135 },
+                        set: { v in store.updateSelectedControl { $0.rotationEndDegrees = v } }),
+                        format: .number.precision(.fractionLength(0...1)))
+                    .textFieldStyle(.roundedBorder).frame(width: 80)
+                }
+            }
+            LabeledContent("Binding") {
+                TextField("state or AU binding", text: Binding(
+                    get: { c.bindingName ?? "" },
+                    set: { v in store.updateSelectedControl { $0.bindingName = v.isEmpty ? nil : v } }))
+                .textFieldStyle(.roundedBorder)
+            }
+            LabeledContent("AU ID") {
+                TextField("au parameter id", text: Binding(
+                    get: { c.auParameterID ?? "" },
+                    set: { v in store.updateSelectedControl { $0.auParameterID = v.isEmpty ? nil : v } }))
+                .textFieldStyle(.roundedBorder)
+            }
+            LabeledContent("MIDI CC") {
+                TextField("0...127", text: Binding(
+                    get: { c.midiCC.map(String.init) ?? "" },
+                    set: { v in store.updateSelectedControl { $0.midiCC = Int(v.trimmingCharacters(in: .whitespacesAndNewlines)) } }))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+            Toggle("Automation Enabled", isOn: Binding(
+                get: { c.automationEnabled ?? false },
+                set: { v in store.updateSelectedControl { $0.automationEnabled = v } }))
+
+            let issues = ControlBehaviourDiagnostics.validate(layer)
+            ForEach(issues) { issue in
+                Label(issue.message, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func applyBehaviourDefaults(_ type: ControlBehaviourType, to meta: inout ControlMetadata) {
+        meta.interactionMode = nil
+        switch type {
+        case .rotaryKnob:
+            meta.isContinuous = true; meta.stepCount = nil
+            meta.rotationStartDegrees = meta.rotationStartDegrees ?? -135
+            meta.rotationEndDegrees = meta.rotationEndDegrees ?? 135
+        case .endlessEncoder:
+            meta.isContinuous = true; meta.stepCount = nil
+            meta.rotationStartDegrees = -180; meta.rotationEndDegrees = 180
+            meta.interactionMode = ControlInteractionMode.relative.rawValue
+        case .steppedKnob:
+            meta.isContinuous = false; meta.stepCount = meta.stepCount ?? 12
+            meta.interactionMode = ControlInteractionMode.steppedSelector.rawValue
+        case .bipolarKnob:
+            meta.isContinuous = true; meta.responseCurve = ControlResponseCurve.bipolar.rawValue
+            if meta.minValue >= 0 { meta.minValue = -abs(meta.maxValue) }
+            if meta.defaultValue < meta.minValue || meta.defaultValue > meta.maxValue { meta.defaultValue = 0 }
+        case .verticalFader, .horizontalSlider:
+            meta.isContinuous = true; meta.stepCount = nil
+            meta.interactionMode = ControlInteractionMode.linearDrag.rawValue
+        case .buttonPress:
+            meta.minValue = 0; meta.maxValue = 1; meta.defaultValue = 0
+            meta.isContinuous = false; meta.stepCount = 2
+            meta.interactionMode = ControlInteractionMode.press.rawValue
+        case .toggleSwitch:
+            meta.minValue = 0; meta.maxValue = 1; meta.defaultValue = 1
+            meta.isContinuous = false; meta.stepCount = 2
+            meta.interactionMode = ControlInteractionMode.toggle.rawValue
+        case .meterReadout:
+            meta.isContinuous = true; meta.stepCount = nil
+            meta.interactionMode = ControlInteractionMode.readOnly.rawValue
         }
     }
 
