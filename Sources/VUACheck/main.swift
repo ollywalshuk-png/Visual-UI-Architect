@@ -1691,6 +1691,77 @@ func runChecks() async {
         c.check("p18 exception", false)
     }
 
+    // MARK: Phase 23 — Asset transform system
+    do {
+        let asset = Asset(name: "Panel", path: "Panel.png", format: .png,
+                          intrinsicSize: VSize(width: 800, height: 400))
+        let transform = AssetTransformSpec(
+            scaleX: 1.5, scaleY: 0.75,
+            flipHorizontal: true, flipVertical: false,
+            crop: CropSpec(x: 0.1, y: 0.2, width: 0.7, height: 0.6),
+            blendMode: .multiply,
+            textureOverlayID: "grain-light")
+        let layer = Layer(name: "Transformed Panel", kind: .image,
+                          frame: VRect(x: 20, y: 20, width: 200, height: 100),
+                          style: LayerStyle(cornerRadius: 10,
+                                            borderColor: .white, borderWidth: 2,
+                                            opacity: 0.8,
+                                            shadow: ShadowSpec(),
+                                            rotationDegrees: 15,
+                                            blurRadius: 1),
+                          assetID: asset.id,
+                          assetTransform: transform)
+
+        c.check("p23 asset rotation model", layer.style.rotationDegrees == 15)
+        c.check("p23 flip transform", transform.effectiveScaleX == -1.5 && transform.effectiveScaleY == 0.75)
+        c.check("p23 crop metadata", transform.crop?.isValidUnitRect == true && transform.crop?.isIdentity == false)
+        c.check("p23 texture hook persists", layer.assetTransform?.textureOverlayID == "grain-light")
+
+        let encoded = try JSONEncoder().encode(layer)
+        let decoded = try JSONDecoder().decode(Layer.self, from: encoded)
+        c.check("p23 transform metadata round-trips",
+                decoded.assetTransform?.blendMode == .multiply &&
+                decoded.assetTransform?.crop?.x == 0.1 &&
+                decoded.assetTransform?.flipHorizontal == true)
+
+        let transformedSrc = (try? CodeGenService().generate(Document(roots: [layer], assets: [asset])).contents) ?? ""
+        c.check("p23 transformed layer codegen",
+                transformedSrc.contains(".rotationEffect(.degrees(15))") &&
+                transformedSrc.contains(".scaleEffect(x: -1.50, y: 0.75)") &&
+                transformedSrc.contains(".blendMode(.multiply)") &&
+                transformedSrc.contains("// Crop metadata:"))
+        c.check("p23 transform codegen keeps border shadow blur",
+                transformedSrc.contains(".overlay(RoundedRectangle") &&
+                transformedSrc.contains(".shadow(") &&
+                transformedSrc.contains(".blur(radius: 1)"))
+
+        let invalidCrop = Layer(name: "Bad Crop", kind: .image,
+                                frame: VRect(x: 0, y: 0, width: 100, height: 100),
+                                assetID: asset.id,
+                                assetTransform: AssetTransformSpec(crop: CropSpec(x: 0.8, y: 0.8, width: 0.5, height: 0.5)))
+        let invalidReport = ValidationService().validate(Document(roots: [invalidCrop], assets: [asset]))
+        c.check("p23 crop outside image bounds diagnostic",
+                invalidReport.issues.contains { $0.message.contains("crop is outside image bounds") })
+
+        let missingAsset = Layer(name: "Missing Asset", kind: .image,
+                                 frame: VRect(x: 0, y: 0, width: 100, height: 100),
+                                 assetTransform: AssetTransformSpec(scaleX: 2, scaleY: 2))
+        let missingReport = ValidationService().validate(Document(roots: [missingAsset]))
+        c.check("p23 missing transformed asset diagnostic",
+                missingReport.issues.contains { $0.message.contains("transform metadata but no asset") })
+
+        let huge = Layer(name: "Huge Transform", kind: .image,
+                         frame: VRect(x: 0, y: 0, width: 700, height: 700),
+                         assetID: asset.id,
+                         assetTransform: AssetTransformSpec(scaleX: 4, scaleY: 4))
+        let hugeReport = ValidationService().validate(Document(roots: [huge], assets: [asset]))
+        c.check("p23 huge transformed image warning",
+                hugeReport.issues.contains { $0.message.contains("transformed image is very large") })
+    } catch {
+        FileHandle.standardError.write(Data("p23 exception: \(error)\n".utf8))
+        c.check("p23 exception", false)
+    }
+
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")
     exit(c.failures == 0 ? 0 : 1)
 }

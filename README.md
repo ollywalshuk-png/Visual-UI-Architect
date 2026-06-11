@@ -243,7 +243,18 @@ system keeps design and production-quality code in sync.
   producing no writes. Candidate previews show clearer source context while
   unsupported constructs remain surfaced as diagnostics.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 363 checks).
+- **Phase 23 — Asset transform system (done):** image/background asset layers
+  now carry export-safe transform metadata for scale, horizontal/vertical flip,
+  unit-space crop, blend mode, and a future texture-overlay hook. Existing
+  style fields continue to drive rotation, opacity, shadow, blur, border,
+  stroke, and corner radius. The inspector exposes the new transform controls,
+  canvas rendering previews scale/flip/blend/crop, and generated SwiftUI emits
+  supported transform modifiers plus crop/texture metadata comments. Validation
+  reports crop outside image bounds, invisible transformed layers, very large
+  transformed images, missing transformed assets, and rotated assets that move
+  off-canvas.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 373 checks).
 
 ## Requirements
 

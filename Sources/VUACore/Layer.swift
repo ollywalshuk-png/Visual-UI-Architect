@@ -277,6 +277,8 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
     public var mask: MaskSpec?
     /// Clip the layer's content to this shape (`.clipShape` in generated code).
     public var clipShape: ShapeKind?
+    /// Asset/image transform metadata (scale, flip, crop, blend, texture hook).
+    public var assetTransform: AssetTransformSpec?
     /// When set, this layer is an *instance* of the component with this id
     /// (its children are derived from the component master). Phase 15.
     public var componentID: UUID?
@@ -306,6 +308,7 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
         polygon: PolygonSpec? = nil,
         mask: MaskSpec? = nil,
         clipShape: ShapeKind? = nil,
+        assetTransform: AssetTransformSpec? = nil,
         componentID: UUID? = nil,
         children: [Layer] = []
     ) {
@@ -331,6 +334,7 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
         self.polygon = polygon
         self.mask = mask
         self.clipShape = clipShape
+        self.assetTransform = assetTransform
         self.componentID = componentID
         self.children = children
     }

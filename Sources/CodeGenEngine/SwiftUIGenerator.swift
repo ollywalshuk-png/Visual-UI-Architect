@@ -259,6 +259,21 @@ public struct SwiftUIGenerator: CodeGenerator {
         if let mask = layer.mask, layer.kind != .mask {
             b.line(".mask(\(shapeExpr(mask.shape, layer)))")
         }
+        if let transform = layer.assetTransform {
+            if let crop = transform.crop, !crop.isIdentity {
+                b.line("// Crop metadata: x \(fmt(crop.x)), y \(fmt(crop.y)), width \(fmt(crop.width)), height \(fmt(crop.height))")
+                b.line(".clipped()")
+            }
+            if transform.scaleX != 1 || transform.scaleY != 1 || transform.flipHorizontal || transform.flipVertical {
+                b.line(".scaleEffect(x: \(fmt(transform.effectiveScaleX)), y: \(fmt(transform.effectiveScaleY)))")
+            }
+            if transform.blendMode != .normal {
+                b.line(".blendMode(.\(transform.blendMode.swiftUIName))")
+            }
+            if let texture = transform.textureOverlayID, !texture.isEmpty {
+                b.line("// Texture overlay hook: \(texture)")
+            }
+        }
         if let border = s.borderColor, s.borderWidth > 0, !selfPaints {
             b.line(".overlay(RoundedRectangle(cornerRadius: \(fmt(s.cornerRadius)))")
             b.indented { $0.line(".stroke(\(colorExpr(border)), lineWidth: \(fmt(s.borderWidth))))") }
@@ -488,5 +503,18 @@ public struct SwiftUIGenerator: CodeGenerator {
     private func sanitizeType(_ name: String) -> String {
         let allowed = name.filter { $0.isLetter || $0.isNumber || $0 == "_" }
         return allowed.isEmpty ? "CustomView" : allowed
+    }
+}
+
+private extension LayerBlendMode {
+    var swiftUIName: String {
+        switch self {
+        case .normal: return "normal"
+        case .multiply: return "multiply"
+        case .screen: return "screen"
+        case .overlay: return "overlay"
+        case .darken: return "darken"
+        case .lighten: return "lighten"
+        }
     }
 }

@@ -56,6 +56,61 @@ public struct StructureValidator: Sendable {
                     layerIDs: [layer.id]))
             }
 
+            if let transform = layer.assetTransform {
+                if layer.assetID == nil && (layer.kind == .image || layer.kind == .background) {
+                    issues.append(ValidationIssue(
+                        severity: .error, category: .asset,
+                        message: "\(layer.name) has transform metadata but no asset.",
+                        recommendation: "Attach an asset or clear the transform metadata.",
+                        layerIDs: [layer.id]))
+                }
+                if let crop = transform.crop, !crop.isValidUnitRect {
+                    issues.append(ValidationIssue(
+                        severity: .error, category: .asset,
+                        message: "\(layer.name) crop is outside image bounds.",
+                        recommendation: "Keep crop x/y/width/height inside the 0...1 asset bounds.",
+                        layerIDs: [layer.id]))
+                }
+                if transform.blendMode == .normal && layer.style.opacity <= 0.001 {
+                    issues.append(ValidationIssue(
+                        severity: .warning, category: .structure,
+                        message: "\(layer.name) transform is invisible.",
+                        recommendation: "Raise opacity or hide the layer intentionally.",
+                        layerIDs: [layer.id]))
+                }
+                let transformedWidth = layer.frame.width * abs(transform.scaleX)
+                let transformedHeight = layer.frame.height * abs(transform.scaleY)
+                if transformedWidth > document.canvasSize.width * 2 || transformedHeight > document.canvasSize.height * 2 {
+                    issues.append(ValidationIssue(
+                        severity: .warning, category: .layout,
+                        message: "\(layer.name) transformed image is very large.",
+                        recommendation: "Reduce scale or confirm this is intentional.",
+                        layerIDs: [layer.id]))
+                }
+                let rotated = layer.style.rotationDegrees.truncatingRemainder(dividingBy: 360) != 0
+                if rotated {
+                    let expanded = rotatedBounds(width: layer.frame.width * abs(transform.scaleX),
+                                                 height: layer.frame.height * abs(transform.scaleY),
+                                                 degrees: layer.style.rotationDegrees)
+                    let bounds = VRect(origin: .zero, size: document.canvasSize)
+                    let rotatedFrame = VRect(
+                        x: layer.frame.midX - expanded.width / 2,
+                        y: layer.frame.midY - expanded.height / 2,
+                        width: expanded.width,
+                        height: expanded.height)
+                    if !bounds.intersects(rotatedFrame) ||
+                        rotatedFrame.origin.x < 0 || rotatedFrame.origin.y < 0 ||
+                        rotatedFrame.origin.x + rotatedFrame.width > bounds.width ||
+                        rotatedFrame.origin.y + rotatedFrame.height > bounds.height {
+                        issues.append(ValidationIssue(
+                            severity: .warning, category: .layout,
+                            message: "\(layer.name) rotation moves part of the asset off-canvas.",
+                            recommendation: "Move, scale, or rotate it back inside the canvas.",
+                            layerIDs: [layer.id]))
+                    }
+                }
+            }
+
             // Empty group — harmless but usually unintended.
             if case .group = layer.kind, layer.children.isEmpty {
                 issues.append(ValidationIssue(
@@ -96,5 +151,13 @@ public struct StructureValidator: Sendable {
         case .unsupportedConnector: return "Add explicit connector handles if exact routing matters."
         case .lineOutsideCanvas: return "Move the line back inside the canvas or resize the canvas."
         }
+    }
+
+    private func rotatedBounds(width: Double, height: Double, degrees: Double) -> VSize {
+        let radians = degrees * .pi / 180
+        let sinA = abs(sin(radians))
+        let cosA = abs(cos(radians))
+        return VSize(width: width * cosA + height * sinA,
+                     height: width * sinA + height * cosA)
     }
 }

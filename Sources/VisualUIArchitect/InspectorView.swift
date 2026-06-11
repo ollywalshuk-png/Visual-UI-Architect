@@ -60,6 +60,7 @@ struct InspectorView: View {
                 }
 
                 if layer.kind == .image || layer.kind == .background {
+                    transformSection(layer)
                     assetSection(layer)
                 }
             }
@@ -229,6 +230,72 @@ struct InspectorView: View {
 
     private func isTextBearing(_ kind: LayerKind) -> Bool {
         switch kind { case .label, .text, .button, .toggle: return true; default: return false }
+    }
+
+    // MARK: - Asset transform section
+
+    @ViewBuilder
+    private func transformSection(_ layer: Layer) -> some View {
+        let transform = layer.assetTransform ?? AssetTransformSpec()
+        let crop = transform.crop ?? CropSpec()
+        Section("Asset Transform") {
+            LabeledContent("Scale X") {
+                TextField("1", value: Binding(
+                    get: { transform.scaleX },
+                    set: { v in updateAssetTransform { $0.scaleX = max(0.01, v) } }),
+                    format: .number.precision(.fractionLength(0...2)))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+            LabeledContent("Scale Y") {
+                TextField("1", value: Binding(
+                    get: { transform.scaleY },
+                    set: { v in updateAssetTransform { $0.scaleY = max(0.01, v) } }),
+                    format: .number.precision(.fractionLength(0...2)))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+            Toggle("Flip Horizontal", isOn: Binding(
+                get: { transform.flipHorizontal },
+                set: { v in updateAssetTransform { $0.flipHorizontal = v } }))
+            Toggle("Flip Vertical", isOn: Binding(
+                get: { transform.flipVertical },
+                set: { v in updateAssetTransform { $0.flipVertical = v } }))
+            LabeledContent("Blend") {
+                Picker("", selection: Binding(
+                    get: { transform.blendMode },
+                    set: { v in updateAssetTransform { $0.blendMode = v } })) {
+                    ForEach(LayerBlendMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }.labelsHidden()
+            }
+            Toggle("Crop Enabled", isOn: Binding(
+                get: { transform.crop != nil },
+                set: { enabled in updateAssetTransform { $0.crop = enabled ? CropSpec() : nil } }))
+            if transform.crop != nil {
+                LabeledContent("Crop X") { cropField(crop.x) { v in updateAssetTransform { $0.crop = crop.with(x: v) } } }
+                LabeledContent("Crop Y") { cropField(crop.y) { v in updateAssetTransform { $0.crop = crop.with(y: v) } } }
+                LabeledContent("Crop W") { cropField(crop.width) { v in updateAssetTransform { $0.crop = crop.with(width: v) } } }
+                LabeledContent("Crop H") { cropField(crop.height) { v in updateAssetTransform { $0.crop = crop.with(height: v) } } }
+            }
+            LabeledContent("Texture Hook") {
+                TextField("texture id", text: Binding(
+                    get: { transform.textureOverlayID ?? "" },
+                    set: { v in updateAssetTransform { $0.textureOverlayID = v.isEmpty ? nil : v } }))
+                .textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+
+    private func updateAssetTransform(_ change: @escaping (inout AssetTransformSpec) -> Void) {
+        store.updateSelectedLayer { layer in
+            var transform = layer.assetTransform ?? AssetTransformSpec()
+            change(&transform)
+            layer.assetTransform = transform.isIdentity ? nil : transform
+        }
+    }
+
+    private func cropField(_ value: Double, set: @escaping (Double) -> Void) -> some View {
+        TextField("0...1", value: Binding(get: { value }, set: { set(min(1, max(0, $0))) }),
+                  format: .number.precision(.fractionLength(0...2)))
+        .textFieldStyle(.roundedBorder).frame(width: 80)
     }
 
     // MARK: - AU parameter (plugin control) section
@@ -605,6 +672,12 @@ struct AlignmentControls: View {
         Button(action: action) { Image(systemName: icon) }
             .buttonStyle(.bordered)
             .help(help)
+    }
+}
+
+private extension CropSpec {
+    func with(x: Double? = nil, y: Double? = nil, width: Double? = nil, height: Double? = nil) -> CropSpec {
+        CropSpec(x: x ?? self.x, y: y ?? self.y, width: width ?? self.width, height: height ?? self.height)
     }
 }
 

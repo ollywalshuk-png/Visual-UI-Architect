@@ -12,6 +12,12 @@ struct LayerRenderView: View {
     var body: some View {
         content
             .frame(width: layer.frame.width, height: layer.frame.height)
+            .ifLet(layer.assetTransform) { view, transform in
+                view
+                    .clipped(transform.crop != nil && !(transform.crop?.isIdentity ?? true))
+                    .scaleEffect(x: transform.effectiveScaleX, y: transform.effectiveScaleY)
+                    .blendMode(transform.blendMode.swiftUI)
+            }
             .opacity(layer.style.opacity)
     }
 

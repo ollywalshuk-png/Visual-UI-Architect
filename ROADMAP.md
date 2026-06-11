@@ -57,6 +57,8 @@ rebuild app bundle → update README → commit when green.
 | P20 | Control behaviour engine | ✅ done | behaviour profiles + inspector binding/MIDI/automation controls + codegen metadata comments |
 | P21 | Refined line tool | ✅ done | line geometry, dashes/dots/caps/joins/arrows/connectors/snap metadata + diagnostics |
 | P22 | Existing UI import polish | ✅ done | explicit temporary-layer import, provenance display, no-anchor apply blocking |
+| P23 | Asset transform system | ✅ done | scale/flip/crop/blend/texture-hook metadata + inspector/codegen/diagnostics |
+| P24 | Raster drawing tool | 🔜 next | paint/brush/eraser strokes, non-destructive PNG asset export |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when
 the project was restored from a Google Drive zip export (Drive strips

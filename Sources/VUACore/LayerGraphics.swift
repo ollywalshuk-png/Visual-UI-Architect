@@ -201,3 +201,64 @@ public struct MaskSpec: Codable, Hashable, Sendable {
         self.feather = feather
     }
 }
+
+/// Asset/image transform metadata. This complements `LayerStyle`, which already
+/// owns rotation, opacity, shadow, blur, border, stroke, and corner radius.
+public enum LayerBlendMode: String, Codable, Hashable, Sendable, CaseIterable {
+    case normal, multiply, screen, overlay, darken, lighten
+}
+
+public struct CropSpec: Codable, Hashable, Sendable {
+    /// Unit-space crop rectangle in the asset's own bounds.
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+
+    public init(x: Double = 0, y: Double = 0, width: Double = 1, height: Double = 1) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+
+    public var isValidUnitRect: Bool {
+        x >= 0 && y >= 0 && width > 0 && height > 0 && x + width <= 1 && y + height <= 1
+    }
+
+    public var isIdentity: Bool {
+        x == 0 && y == 0 && width == 1 && height == 1
+    }
+}
+
+public struct AssetTransformSpec: Codable, Hashable, Sendable {
+    public var scaleX: Double
+    public var scaleY: Double
+    public var flipHorizontal: Bool
+    public var flipVertical: Bool
+    public var crop: CropSpec?
+    public var blendMode: LayerBlendMode
+    /// Phase 23 hook for later texture/material work. It is metadata-only until
+    /// Phase 26 adds material rendering.
+    public var textureOverlayID: String?
+
+    public init(scaleX: Double = 1, scaleY: Double = 1,
+                flipHorizontal: Bool = false, flipVertical: Bool = false,
+                crop: CropSpec? = nil, blendMode: LayerBlendMode = .normal,
+                textureOverlayID: String? = nil) {
+        self.scaleX = scaleX
+        self.scaleY = scaleY
+        self.flipHorizontal = flipHorizontal
+        self.flipVertical = flipVertical
+        self.crop = crop
+        self.blendMode = blendMode
+        self.textureOverlayID = textureOverlayID
+    }
+
+    public var effectiveScaleX: Double { scaleX * (flipHorizontal ? -1 : 1) }
+    public var effectiveScaleY: Double { scaleY * (flipVertical ? -1 : 1) }
+    public var isIdentity: Bool {
+        scaleX == 1 && scaleY == 1 && !flipHorizontal && !flipVertical &&
+        (crop?.isIdentity ?? true) && blendMode == .normal && textureOverlayID == nil
+    }
+}

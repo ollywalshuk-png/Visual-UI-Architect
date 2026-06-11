@@ -268,6 +268,7 @@ private extension Layer {
             role: role, notes: notes, tags: tags,
             isCollapsed: isCollapsed, isAccessibilityHidden: isAccessibilityHidden,
             line: line, polygon: polygon, mask: mask, clipShape: clipShape,
+            assetTransform: assetTransform,
             componentID: cid,
             children: children)
     }

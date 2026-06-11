@@ -136,6 +136,7 @@ private func withoutComponentID(_ layer: Layer) -> Layer {
         role: layer.role, notes: layer.notes, tags: layer.tags,
         isCollapsed: layer.isCollapsed, isAccessibilityHidden: layer.isAccessibilityHidden,
         line: layer.line, polygon: layer.polygon, mask: layer.mask, clipShape: layer.clipShape,
+        assetTransform: layer.assetTransform,
         componentID: nil,
         children: layer.children)
 }

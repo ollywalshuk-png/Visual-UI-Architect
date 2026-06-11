@@ -120,3 +120,36 @@ extension LineJoinStyle {
         }
     }
 }
+
+extension LayerBlendMode {
+    var swiftUI: BlendMode {
+        switch self {
+        case .normal: return .normal
+        case .multiply: return .multiply
+        case .screen: return .screen
+        case .overlay: return .overlay
+        case .darken: return .darken
+        case .lighten: return .lighten
+        }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func ifLet<T, Content: View>(_ value: T?, transform: (Self, T) -> Content) -> some View {
+        if let value {
+            transform(self, value)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func clipped(_ active: Bool) -> some View {
+        if active {
+            self.clipped()
+        } else {
+            self
+        }
+    }
+}
