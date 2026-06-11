@@ -14,6 +14,9 @@ public struct Document: Codable, Hashable, Sendable {
     public var codeGenTarget: CodeGenTarget
     /// Reusable component library (Phase 15). Decodes to [] for older documents.
     public var components: [Component]
+    /// Reusable design tokens (Phase 28). Layers can reference these while
+    /// retaining concrete fallback values for older exports/imports.
+    public var designTokens: [DesignToken]
     /// Schema version for forward-compatible migration.
     public var schemaVersion: Int
 
@@ -27,6 +30,7 @@ public struct Document: Codable, Hashable, Sendable {
         activeOrientation: DeviceProfile.Orientation = .portrait,
         codeGenTarget: CodeGenTarget = .swiftUI,
         components: [Component] = [],
+        designTokens: [DesignToken] = [],
         schemaVersion: Int = Document.currentSchemaVersion
     ) {
         self.name = name
@@ -36,11 +40,12 @@ public struct Document: Codable, Hashable, Sendable {
         self.activeOrientation = activeOrientation
         self.codeGenTarget = codeGenTarget
         self.components = components
+        self.designTokens = designTokens
         self.schemaVersion = schemaVersion
     }
 
     private enum CodingKeys: String, CodingKey {
-        case name, roots, assets, activeDevice, activeOrientation, codeGenTarget, components, schemaVersion
+        case name, roots, assets, activeDevice, activeOrientation, codeGenTarget, components, designTokens, schemaVersion
     }
 
     /// Custom decoder so documents saved before Phase 15 (no `components` key)
@@ -54,6 +59,7 @@ public struct Document: Codable, Hashable, Sendable {
         activeOrientation = try c.decode(DeviceProfile.Orientation.self, forKey: .activeOrientation)
         codeGenTarget = try c.decode(CodeGenTarget.self, forKey: .codeGenTarget)
         components = try c.decodeIfPresent([Component].self, forKey: .components) ?? []
+        designTokens = try c.decodeIfPresent([DesignToken].self, forKey: .designTokens) ?? []
         schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
     }
 
@@ -61,6 +67,7 @@ public struct Document: Codable, Hashable, Sendable {
 
     public func asset(id: UUID) -> Asset? { assets.first { $0.id == id } }
     public func component(id: UUID) -> Component? { components.first { $0.id == id } }
+    public func designToken(id: UUID) -> DesignToken? { designTokens.first { $0.id == id } }
 }
 
 /// Supported code-generation targets. SwiftUI is implemented; the others are

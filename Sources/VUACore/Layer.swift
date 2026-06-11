@@ -84,6 +84,9 @@ public struct LayerStyle: Codable, Hashable, Sendable {
     public var shadow: ShadowSpec?
     public var rotationDegrees: Double
     public var blurRadius: Double
+    /// References into `Document.designTokens`; concrete fields remain the
+    /// fallback so generated/imported code is never token-only.
+    public var tokens: LayerTokenReferences
 
     public enum FontWeight: String, Codable, Hashable, Sendable, CaseIterable {
         case ultraLight, thin, light, regular, medium, semibold, bold, heavy, black
@@ -101,7 +104,8 @@ public struct LayerStyle: Codable, Hashable, Sendable {
         gradient: GradientSpec? = nil,
         shadow: ShadowSpec? = nil,
         rotationDegrees: Double = 0,
-        blurRadius: Double = 0
+        blurRadius: Double = 0,
+        tokens: LayerTokenReferences = LayerTokenReferences()
     ) {
         self.backgroundColor = backgroundColor
         self.foregroundColor = foregroundColor
@@ -115,9 +119,32 @@ public struct LayerStyle: Codable, Hashable, Sendable {
         self.shadow = shadow
         self.rotationDegrees = rotationDegrees
         self.blurRadius = blurRadius
+        self.tokens = tokens
     }
 
     public static let `default` = LayerStyle()
+
+    enum CodingKeys: String, CodingKey {
+        case backgroundColor, foregroundColor, cornerRadius, borderColor, borderWidth,
+             opacity, fontSize, fontWeight, gradient, shadow, rotationDegrees, blurRadius, tokens
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        backgroundColor = try c.decodeIfPresent(VColor.self, forKey: .backgroundColor)
+        foregroundColor = try c.decodeIfPresent(VColor.self, forKey: .foregroundColor)
+        cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? 0
+        borderColor = try c.decodeIfPresent(VColor.self, forKey: .borderColor)
+        borderWidth = try c.decodeIfPresent(Double.self, forKey: .borderWidth) ?? 0
+        opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
+        fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize)
+        fontWeight = try c.decodeIfPresent(FontWeight.self, forKey: .fontWeight)
+        gradient = try c.decodeIfPresent(GradientSpec.self, forKey: .gradient)
+        shadow = try c.decodeIfPresent(ShadowSpec.self, forKey: .shadow)
+        rotationDegrees = try c.decodeIfPresent(Double.self, forKey: .rotationDegrees) ?? 0
+        blurRadius = try c.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 0
+        tokens = try c.decodeIfPresent(LayerTokenReferences.self, forKey: .tokens) ?? LayerTokenReferences()
+    }
 }
 
 /// Links a layer back to its representation in source code, enabling

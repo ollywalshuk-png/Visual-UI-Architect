@@ -287,7 +287,13 @@ system keeps design and production-quality code in sync.
   lock properties, surface override indicators in the inspector, and generate
   variant-aware SwiftUI component structs.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 403 checks).
+- **Phase 28 — Design token system (done):** documents now store reusable
+  colour, typography, spacing, radius, shadow, gradient, and material tokens.
+  The Tokens sidebar can create and apply a starter token set, the inspector
+  shows token references on selected layers, global token edits preserve those
+  references, and SwiftUI generation emits a `DesignTokens` namespace.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 410 checks).
 
 ## Requirements
 
@@ -407,6 +413,5 @@ test fails if generated code ever stops compiling outside Visual UI Architect.
 
 ## Roadmap
 
-Next: component variants/overrides, reusable design tokens, target-app
-injection hardening, existing-app view graphs, UX polish, performance for large
-projects, and deployment/distribution readiness.
+Next: target-app injection hardening, existing-app view graphs, UX polish,
+performance for large projects, and deployment/distribution readiness.

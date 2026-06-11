@@ -42,6 +42,8 @@ struct InspectorView: View {
                     sliderRow("Opacity", \.style.opacity, layer, range: 0...1)
                 }
 
+                tokenSection(layer)
+
                 effectsSection(layer)
 
                 if layer.kind == .gradient || layer.style.gradient != nil {
@@ -119,6 +121,46 @@ struct InspectorView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func tokenSection(_ layer: Layer) -> some View {
+        if !store.designTokens.isEmpty || !layer.style.tokens.isEmpty {
+            Section("Design Tokens") {
+                if layer.style.tokens.isEmpty {
+                    Text("No token references").foregroundStyle(.secondary)
+                } else {
+                    ForEach(tokenLabels(for: layer), id: \.self) { label in
+                        Label(label, systemImage: "tag")
+                            .font(.caption)
+                    }
+                }
+                Menu("Apply Token") {
+                    ForEach(store.designTokens) { token in
+                        Button(token.name) { store.applyTokenToSelection(token) }
+                    }
+                }
+                .disabled(store.designTokens.isEmpty)
+            }
+        }
+    }
+
+    private func tokenLabels(for layer: Layer) -> [String] {
+        let refs = layer.style.tokens
+        let pairs: [(String, UUID?)] = [
+            ("Background", refs.backgroundColor),
+            ("Foreground", refs.foregroundColor),
+            ("Type", refs.typography),
+            ("Spacing", refs.spacing),
+            ("Radius", refs.cornerRadius),
+            ("Shadow", refs.shadow),
+            ("Gradient", refs.gradient),
+            ("Material", refs.material)
+        ]
+        return pairs.compactMap { label, id in
+            guard let id, let token = store.document.designToken(id: id) else { return nil }
+            return "\(label): \(token.name)"
         }
     }
 

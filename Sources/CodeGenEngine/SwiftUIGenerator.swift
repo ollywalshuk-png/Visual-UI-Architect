@@ -33,6 +33,10 @@ public struct SwiftUIGenerator: CodeGenerator {
             b.line("import VUAControls")
         }
         b.line()
+        if !document.designTokens.isEmpty {
+            emitDesignTokens(document.designTokens, into: &b)
+            b.line()
+        }
         b.block("struct \(viewName): View {") { b in
             b.block("var body: some View {") { b in
                 b.block("ZStack(alignment: .topLeading) {") { b in
@@ -68,6 +72,27 @@ public struct SwiftUIGenerator: CodeGenerator {
 
     // MARK: - Layer emission
 
+    private func emitDesignTokens(_ tokens: [DesignToken], into b: inout SourceBuilder) {
+        b.block("enum DesignTokens {") { b in
+            for token in tokens {
+                switch token.value {
+                case .color(let color):
+                    b.line("static let \(token.swiftName) = \(colorExpr(color))")
+                case .typography(let size, let weight):
+                    b.line("static let \(token.swiftName) = Font.system(size: \(fmt(size))\(weight.map { ", weight: .\($0.rawValue)" } ?? ""))")
+                case .spacing(let value), .cornerRadius(let value):
+                    b.line("static let \(token.swiftName): CGFloat = \(fmt(value))")
+                case .shadow(let shadow):
+                    b.line("static let \(token.swiftName) = (color: \(colorExpr(shadow.color)), radius: \(fmt(shadow.radius)), x: \(fmt(shadow.x)), y: \(fmt(shadow.y)))")
+                case .gradient(let gradient):
+                    b.line("static let \(token.swiftName) = \(gradientExpr(gradient))")
+                case .material(let material):
+                    b.line("static let \(token.swiftName): Material = .\(material)")
+                }
+            }
+        }
+    }
+
     private func emit(_ layer: Layer, into b: inout SourceBuilder, document: Document) {
         b.line("// MARK: \(layer.name) [\(layer.kind.displayName)]")
         if let c = layer.control {
@@ -99,7 +124,7 @@ public struct SwiftUIGenerator: CodeGenerator {
         }
         b.line("}")
         b.indented { b in
-            emitModifiers(layer, into: &b)
+            emitModifiers(layer, into: &b, document: document)
         }
     }
 
@@ -265,32 +290,38 @@ public struct SwiftUIGenerator: CodeGenerator {
         }
     }
 
-    private func emitModifiers(_ layer: Layer, into b: inout SourceBuilder) {
+    private func emitModifiers(_ layer: Layer, into b: inout SourceBuilder, document: Document) {
         let s = layer.style
         // Shapes/lines/polygons handle their own fill+stroke in content.
         let selfPaints = isVectorKind(layer.kind)
 
         if let fg = s.foregroundColor, !selfPaints {
-            b.line(".foregroundStyle(\(colorExpr(fg)))")
+            b.line(".foregroundStyle(\(tokenExpr(s.tokens.foregroundColor, document: document) ?? colorExpr(fg)))")
         }
         if let fontSize = s.fontSize {
-            let weight = s.fontWeight.map { ".weight(.\($0.rawValue))" } ?? ""
-            b.line(".font(.system(size: \(fmt(fontSize)))\(weight))")
+            if let token = tokenExpr(s.tokens.typography, document: document) {
+                b.line(".font(\(token))")
+            } else {
+                let weight = s.fontWeight.map { ".weight(.\($0.rawValue))" } ?? ""
+                b.line(".font(.system(size: \(fmt(fontSize)))\(weight))")
+            }
         }
         // Size first, then background/clip, then transform, then position.
         b.line(".frame(width: \(fmt(layer.frame.width)), height: \(fmt(layer.frame.height)))")
         if !selfPaints {
             if let gradient = s.gradient {
-                b.line(".background(\(gradientExpr(gradient)))")
+                b.line(".background(\(tokenExpr(s.tokens.gradient, document: document) ?? gradientExpr(gradient)))")
             } else if let bg = s.backgroundColor {
-                b.line(".background(\(colorExpr(bg)))")
+                b.line(".background(\(tokenExpr(s.tokens.backgroundColor, document: document) ?? colorExpr(bg)))")
+            } else if let material = s.tokens.material, let name = tokenName(material, document: document) {
+                b.line(".background(DesignTokens.\(name))")
             }
         }
         // Explicit clip shape (mask) takes priority over corner-radius clip.
         if let clip = layer.clipShape {
             b.line(".clipShape(\(shapeExpr(clip, layer)))")
         } else if s.cornerRadius > 0 && !selfPaints {
-            b.line(".clipShape(RoundedRectangle(cornerRadius: \(fmt(s.cornerRadius))))")
+            b.line(".clipShape(RoundedRectangle(cornerRadius: \(tokenExpr(s.tokens.cornerRadius, document: document) ?? fmt(s.cornerRadius))))")
         }
         if let mask = layer.mask, layer.kind != .mask {
             b.line(".mask(\(shapeExpr(mask.shape, layer)))")
@@ -315,7 +346,11 @@ public struct SwiftUIGenerator: CodeGenerator {
             b.indented { $0.line(".stroke(\(colorExpr(border)), lineWidth: \(fmt(s.borderWidth))))") }
         }
         if let shadow = s.shadow {
-            b.line(".shadow(color: \(colorExpr(shadow.color)), radius: \(fmt(shadow.radius)), x: \(fmt(shadow.x)), y: \(fmt(shadow.y)))")
+            if let name = tokenName(s.tokens.shadow, document: document) {
+                b.line(".shadow(color: DesignTokens.\(name).color, radius: DesignTokens.\(name).radius, x: DesignTokens.\(name).x, y: DesignTokens.\(name).y)")
+            } else {
+                b.line(".shadow(color: \(colorExpr(shadow.color)), radius: \(fmt(shadow.radius)), x: \(fmt(shadow.x)), y: \(fmt(shadow.y)))")
+            }
         }
         if s.blurRadius > 0 {
             b.line(".blur(radius: \(fmt(s.blurRadius)))")
@@ -549,6 +584,16 @@ public struct SwiftUIGenerator: CodeGenerator {
 
     private func colorExpr(_ c: VColor) -> String {
         "Color(.sRGB, red: \(fmt(c.red)), green: \(fmt(c.green)), blue: \(fmt(c.blue)), opacity: \(fmt(c.alpha)))"
+    }
+
+    private func tokenExpr(_ id: UUID?, document: Document) -> String? {
+        guard let id, let token = document.designToken(id: id) else { return nil }
+        return "DesignTokens.\(token.swiftName)"
+    }
+
+    private func tokenName(_ id: UUID?, document: Document) -> String? {
+        guard let id, let token = document.designToken(id: id) else { return nil }
+        return token.swiftName
     }
 
     private func quoted(_ s: String) -> String {

@@ -1253,6 +1253,39 @@ func runChecks() async {
         let decodedVariantDoc = try JSONDecoder().decode(Document.self, from: variantJSON)
         c.check("p27 component variants round-trip", decodedVariantDoc.components.first?.variants.count == 4)
 
+        // Phase 28 — design token system.
+        let primaryToken = DesignToken(name: "Primary Color", kind: .color,
+                                       value: .color(VColor(red: 0.2, green: 0.4, blue: 0.9, alpha: 1)))
+        let radiusToken = DesignToken(name: "Radius 8", kind: .cornerRadius, value: .cornerRadius(8))
+        let typeToken = DesignToken(name: "Body Type", kind: .typography,
+                                    value: .typography(size: 15, weight: .semibold))
+        let tokenLayer = Layer(name: "Token Button", kind: .button,
+                               frame: VRect(x: 0, y: 0, width: 140, height: 44),
+                               style: LayerStyle(backgroundColor: VColor(red: 0.2, green: 0.4, blue: 0.9, alpha: 1),
+                                                 cornerRadius: 8,
+                                                 fontSize: 15,
+                                                 fontWeight: .semibold,
+                                                 tokens: LayerTokenReferences(backgroundColor: primaryToken.id,
+                                                                              typography: typeToken.id,
+                                                                              cornerRadius: radiusToken.id)),
+                               text: "Token")
+        var tokenDoc = Document(name: "Tokens", roots: [tokenLayer],
+                                designTokens: [primaryToken, radiusToken, typeToken])
+        c.check("p28 token browser model", tokenDoc.designTokens.map(\.kind).contains(.color)
+                && tokenDoc.designTokens.map(\.kind).contains(.typography))
+        c.check("p28 token references", tokenDoc.roots[0].style.tokens.backgroundColor == primaryToken.id
+                && tokenDoc.roots[0].style.tokens.cornerRadius == radiusToken.id)
+        tokenDoc.designTokens[0] = DesignToken(id: primaryToken.id, name: "Primary Color", kind: .color,
+                                               value: .color(VColor(red: 1, green: 0, blue: 0, alpha: 1)))
+        c.check("p28 global token update keeps reference", tokenDoc.roots[0].style.tokens.backgroundColor == tokenDoc.designTokens[0].id)
+        let tokenSource = (try? CodeGenService().generate(tokenDoc).contents) ?? ""
+        c.check("p28 codegen emits token namespace", tokenSource.contains("enum DesignTokens"))
+        c.check("p28 codegen uses color token", tokenSource.contains(".background(DesignTokens.primaryColor)"))
+        c.check("p28 codegen uses typography token", tokenSource.contains(".font(DesignTokens.bodyType)"))
+        let tokenJSON = try JSONEncoder().encode(tokenDoc)
+        let decodedTokenDoc = try JSONDecoder().decode(Document.self, from: tokenJSON)
+        c.check("p28 tokens round-trip", decodedTokenDoc.designTokens.count == 3)
+
         // Real swift build of an exported component-bearing doc.
         let exDir = fm.temporaryDirectory.appendingPathComponent("vua-p15-export-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: exDir) }
