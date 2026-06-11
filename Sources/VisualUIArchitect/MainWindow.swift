@@ -2,6 +2,7 @@ import SwiftUI
 import VUACore
 import RepositoryEngine
 import PersistenceEngine
+import ImportEngine
 
 /// Top-level window layout: layer sidebar, canvas, inspector, validation, and
 /// the editor toolbar.
@@ -13,6 +14,7 @@ struct MainWindow: View {
     @State private var showSnapshots = false
     @State private var showWorkspace = false
     @State private var showImportUI = false
+    @State private var showImportWizard = false
     @State private var showBuild = false
     @State private var showHandoff = false
     @State private var showQuality = false
@@ -76,6 +78,7 @@ struct MainWindow: View {
         .sheet(isPresented: $showSnapshots) { SnapshotsView().environmentObject(store) }
         .sheet(isPresented: $showWorkspace) { WorkspaceDiagnosticsView().environmentObject(store) }
         .sheet(isPresented: $showImportUI) { ImportUIView().environmentObject(store) }
+        .sheet(isPresented: $showImportWizard) { ImportWizardView().environmentObject(store) }
         .onReceive(NotificationCenter.default.publisher(for: .vuaImportExistingUI)) { _ in showImportUI = true }
         .sheet(isPresented: $showBuild) { BuildDiagnosticsView().environmentObject(store) }
         .sheet(isPresented: $showHandoff) { HandoffView().environmentObject(store) }
@@ -180,6 +183,11 @@ struct MainWindow: View {
             .help(store.importedViewName == nil
                   ? "Import an existing SwiftUI file or app/repo into the canvas"
                   : "Imported \(store.importedViewName ?? "UI") from \(store.importedSourcePath ?? "source")")
+
+            Button { showImportWizard = true } label: {
+                Label("Import Wizard", systemImage: "wand.and.stars")
+            }
+            .help("Guided import with framework detection, warnings, and screen review")
 
             Button { showWorkspace = true } label: { Label("Workspace", systemImage: "checkmark.shield") }
                 .help("Workspace safety diagnostics")

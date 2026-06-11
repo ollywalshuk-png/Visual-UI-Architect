@@ -17,7 +17,7 @@ let package = Package(
             "ConstraintEngine", "ValidationEngine", "GitEngine",
             "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
             "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine", "WorkspaceEngine", "ComponentEngine",
-            "BuildIntelligenceEngine", "HandoffGeneratorEngine", "UIQualityEngine", "ControlBehaviourEngine",
+            "BuildIntelligenceEngine", "HandoffGeneratorEngine", "UIQualityEngine", "ControlBehaviourEngine", "ImportEngine",
             "RasterDrawingEngine", "VectorDrawingEngine"
         ])
     ],
@@ -59,6 +59,9 @@ let package = Package(
                 .product(name: "SwiftSyntaxBuilder", package: "swift-syntax")
             ]
         ),
+
+        // Universal import architecture: framework detection + adapter routing metadata.
+        .target(name: "ImportEngine", dependencies: ["VUACore", "RepositoryEngine"]),
 
         // Persistence: .vuaproj document bundle (document.json + Assets/).
         .target(name: "PersistenceEngine", dependencies: ["VUACore", "AssetEngine"]),
@@ -102,7 +105,7 @@ let package = Package(
                 "LayoutEngine", "ConstraintEngine", "ValidationEngine",
                 "GitEngine", "CodeGenEngine", "AIEngine", "PreviewEngine", "RepositoryEngine",
                 "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
-                "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine",
+                "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine", "ImportEngine",
                 "UIQualityEngine", "ComponentEngine", "ControlBehaviourEngine", "RasterDrawingEngine", "VectorDrawingEngine"
             ]
         ),
@@ -114,7 +117,7 @@ let package = Package(
                 "VUACore", "LayerEngine", "CodeGenEngine", "ValidationEngine",
                 "ConstraintEngine", "LayoutEngine", "PreviewEngine", "AIEngine", "RepositoryEngine",
                 "AssetEngine", "VUAControls", "ExportIntegrityEngine", "PersistenceEngine", "PresetEngine",
-                "CanvasEngine", "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine",
+                "CanvasEngine", "WorkspaceEngine", "BuildIntelligenceEngine", "HandoffGeneratorEngine", "ImportEngine",
                 "UIQualityEngine", "ComponentEngine", "ControlBehaviourEngine", "RasterDrawingEngine", "VectorDrawingEngine"
             ]
         ),

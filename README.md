@@ -326,7 +326,17 @@ system keeps design and production-quality code in sync.
   temporary-only. Style write-back now emits valid SwiftUI color members for
   existing style modifiers while preserving surrounding source.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 440 checks).
+- **Phase 39/40 — Universal import architecture + Import Wizard (done):**
+  new **`ImportEngine`** detects SwiftUI, UIKit, AppKit, React, React Native,
+  Electron, HTML/CSS, Flutter, and unknown projects, then produces compatibility
+  ratings, implementation state, warnings, file/screen/component counts, and
+  SwiftUI candidates. The app now has a guided **Import Wizard** with project
+  selection, framework detection, summary, screen discovery, review, and import
+  steps. SwiftUI remains the fully implemented import path; React/Electron/HTML
+  are foundation-only detection states and future adapters are surfaced safely
+  with warnings instead of destructive or silent imports.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 463 checks).
 
 ## Requirements
 

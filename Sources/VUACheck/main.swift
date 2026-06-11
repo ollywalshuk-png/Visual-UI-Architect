@@ -24,6 +24,7 @@ import ComponentEngine
 import ControlBehaviourEngine
 import RasterDrawingEngine
 import VectorDrawingEngine
+import ImportEngine
 
 // A dependency-free assertion harness so the engines can be verified with
 // `swift run VUACheck` on a machine that has no Xcode (no XCTest).
@@ -1970,6 +1971,105 @@ func runChecks() async {
     } catch {
         FileHandle.standardError.write(Data("p18 exception: \(error)\n".utf8))
         c.check("p18 exception", false)
+    }
+
+    // MARK: Phase 39/40 — Universal import architecture + import wizard data
+    do {
+        func makeProject(_ name: String) throws -> URL {
+            let url = fm.temporaryDirectory.appendingPathComponent("vua-import-engine-\(name)-\(UUID().uuidString)")
+            try fm.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
+
+        let detector = ImportFrameworkDetector()
+        let coordinator = ImportCoordinator()
+
+        let swiftUIRoot = try makeProject("swiftui")
+        defer { try? fm.removeItem(at: swiftUIRoot) }
+        try fm.createDirectory(at: swiftUIRoot.appendingPathComponent("Sources/App"), withIntermediateDirectories: true)
+        try """
+        import SwiftUI
+        struct Dashboard: View {
+            var body: some View {
+                VStack {
+                    Text("Dashboard").accessibilityIdentifier("dashboardTitle")
+                }
+            }
+        }
+        """.data(using: .utf8)!.write(to: swiftUIRoot.appendingPathComponent("Sources/App/Dashboard.swift"))
+        let swiftUISummary = detector.detect(root: swiftUIRoot)
+        c.check("p39 detects SwiftUI", swiftUISummary.framework == .swiftUI)
+        c.check("p39 SwiftUI is implemented", swiftUISummary.implementationState == .implemented)
+        c.check("p39 SwiftUI rates green", swiftUISummary.rating == .green)
+        c.check("p39 SwiftUI discovers screens", swiftUISummary.screenCount == 1 && swiftUISummary.candidates.contains { $0.viewName == "Dashboard" })
+        c.check("p39 coordinator mirrors detector", coordinator.summarize(root: swiftUIRoot).framework == .swiftUI)
+        c.check("p40 wizard summary has screen metrics", swiftUISummary.fileCount >= 1 && swiftUISummary.componentCount >= 1)
+
+        let uiKitRoot = try makeProject("uikit")
+        defer { try? fm.removeItem(at: uiKitRoot) }
+        try """
+        import UIKit
+        final class ViewController: UIViewController {}
+        """.data(using: .utf8)!.write(to: uiKitRoot.appendingPathComponent("ViewController.swift"))
+        let uiKitSummary = detector.detect(root: uiKitRoot)
+        c.check("p39 detects UIKit", uiKitSummary.framework == .uiKit)
+        c.check("p39 UIKit is coming soon", uiKitSummary.implementationState == .comingSoon && uiKitSummary.rating == .red)
+
+        let appKitRoot = try makeProject("appkit")
+        defer { try? fm.removeItem(at: appKitRoot) }
+        try """
+        import AppKit
+        final class WindowController: NSWindowController {}
+        """.data(using: .utf8)!.write(to: appKitRoot.appendingPathComponent("WindowController.swift"))
+        let appKitSummary = detector.detect(root: appKitRoot)
+        c.check("p39 detects AppKit", appKitSummary.framework == .appKit)
+        c.check("p39 AppKit is coming soon", appKitSummary.implementationState == .comingSoon && appKitSummary.rating == .red)
+
+        let reactRoot = try makeProject("react")
+        defer { try? fm.removeItem(at: reactRoot) }
+        try #"{"dependencies":{"react":"latest"}}"#.data(using: .utf8)!.write(to: reactRoot.appendingPathComponent("package.json"))
+        let reactSummary = detector.detect(root: reactRoot)
+        c.check("p39 detects React", reactSummary.framework == .react)
+        c.check("p39 React is foundation-only", reactSummary.implementationState == .foundationOnly && reactSummary.rating == .yellow)
+
+        let reactNativeRoot = try makeProject("react-native")
+        defer { try? fm.removeItem(at: reactNativeRoot) }
+        try #"{"dependencies":{"react-native":"latest","react":"latest"}}"#.data(using: .utf8)!.write(to: reactNativeRoot.appendingPathComponent("package.json"))
+        let reactNativeSummary = detector.detect(root: reactNativeRoot)
+        c.check("p39 detects React Native before React", reactNativeSummary.framework == .reactNative)
+        c.check("p39 React Native is coming soon", reactNativeSummary.implementationState == .comingSoon)
+
+        let electronRoot = try makeProject("electron")
+        defer { try? fm.removeItem(at: electronRoot) }
+        try #"{"dependencies":{"electron":"latest","react":"latest"}}"#.data(using: .utf8)!.write(to: electronRoot.appendingPathComponent("package.json"))
+        let electronSummary = detector.detect(root: electronRoot)
+        c.check("p39 detects Electron before React", electronSummary.framework == .electron)
+        c.check("p39 Electron is foundation-only", electronSummary.implementationState == .foundationOnly && electronSummary.rating == .yellow)
+
+        let htmlRoot = try makeProject("html")
+        defer { try? fm.removeItem(at: htmlRoot) }
+        try "<html><body><button>Start</button></body></html>".data(using: .utf8)!.write(to: htmlRoot.appendingPathComponent("index.html"))
+        let htmlSummary = detector.detect(root: htmlRoot)
+        c.check("p39 detects HTML CSS", htmlSummary.framework == .htmlCSS)
+        c.check("p39 HTML CSS is foundation-only", htmlSummary.implementationState == .foundationOnly && htmlSummary.rating == .yellow)
+
+        let flutterRoot = try makeProject("flutter")
+        defer { try? fm.removeItem(at: flutterRoot) }
+        try "dependencies:\n  flutter:\n    sdk: flutter\n".data(using: .utf8)!.write(to: flutterRoot.appendingPathComponent("pubspec.yaml"))
+        let flutterSummary = detector.detect(root: flutterRoot)
+        c.check("p39 detects Flutter", flutterSummary.framework == .flutter)
+        c.check("p39 Flutter is coming soon", flutterSummary.implementationState == .comingSoon)
+
+        let unknownRoot = try makeProject("unknown")
+        defer { try? fm.removeItem(at: unknownRoot) }
+        try "notes".data(using: .utf8)!.write(to: unknownRoot.appendingPathComponent("README.txt"))
+        let unknownSummary = detector.detect(root: unknownRoot)
+        c.check("p39 detects unknown", unknownSummary.framework == .unknown)
+        c.check("p39 unknown is unsupported", unknownSummary.implementationState == .unsupported && unknownSummary.rating == .red)
+        c.check("p40 warnings are visible before import", !reactSummary.warnings.isEmpty && !unknownSummary.warnings.isEmpty)
+    } catch {
+        FileHandle.standardError.write(Data("p39/p40 exception: \(error)\n".utf8))
+        c.check("p39/p40 exception", false)
     }
 
     // MARK: Phase 23 — Asset transform system
