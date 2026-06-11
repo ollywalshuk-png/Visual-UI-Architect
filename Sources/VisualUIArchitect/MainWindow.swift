@@ -22,7 +22,15 @@ struct MainWindow: View {
     @State private var applyResult: SafeApplyResult?
     @State private var showApplyResult = false
 
-    enum SidebarTab: String, CaseIterable { case layers = "Layers", assets = "Assets", presets = "Presets", controls = "Controls", components = "Components", repo = "Repository" }
+    enum SidebarTab: String, CaseIterable {
+        case layers = "Layers"
+        case assets = "Assets"
+        case presets = "Presets"
+        case controls = "Controls"
+        case controlAssets = "Control Assets"
+        case components = "Components"
+        case repo = "Repository"
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -39,6 +47,7 @@ struct MainWindow: View {
                 case .assets: AssetBrowserView()
                 case .presets: PresetsBrowserView()
                 case .controls: ControlPresetsBrowserView()
+                case .controlAssets: ControlAssetsBrowserView()
                 case .components: ComponentsBrowserView()
                 case .repo: RepositoryBrowserView()
                 }

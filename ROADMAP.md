@@ -53,7 +53,10 @@ rebuild app bundle → update README → commit when green.
 | P16 | Advanced control presets (250) | ✅ done | `cec98f3` |
 | P17 | Functional asset metadata | ✅ done | role/function/binding on assets; metadata-aware drop; diagnostics |
 | P18 | Existing UI import / screen loader | ✅ done | import SwiftUI file/repo → candidates+confidence → editable layers → hash-guarded apply |
-| P19 | (next) — TBD by handoff | 🔜 next | per the delivery track |
+| P19 | Control asset library expansion | ✅ done | 120 functional control assets: 20× knob/fader/slider/button/switch/meter, metadata + live previews |
+| P20 | Control behaviour engine | 🔜 next | behaviour models + inspector binding controls |
+| P21 | Refined line tool | 🔜 next | richer line geometry, connectors, diagnostics |
+| P22 | Existing UI import polish | 🔜 next | clearer previews/provenance/no-anchor messaging |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when
 the project was restored from a Google Drive zip export (Drive strips

@@ -1239,6 +1239,64 @@ func runChecks() async {
         c.check("layout preset library still loads", PresetLibrary.all.count > 0)
     }
 
+    // MARK: Phase 19 — Control asset library expansion
+    do {
+        let assets = ControlAssetLibrary.all
+        c.check("p19 control assets total", assets.count == 120)
+        c.check("p19 at least 20 knobs", ControlAssetLibrary.assets(in: .knob).count >= 20)
+        c.check("p19 at least 20 faders", ControlAssetLibrary.assets(in: .fader).count >= 20)
+        c.check("p19 at least 20 sliders", ControlAssetLibrary.assets(in: .slider).count >= 20)
+        c.check("p19 at least 20 buttons", ControlAssetLibrary.assets(in: .button).count >= 20)
+        c.check("p19 at least 20 toggles", ControlAssetLibrary.assets(in: .toggle).count >= 20)
+        c.check("p19 at least 20 meters", ControlAssetLibrary.assets(in: .meter).count >= 20)
+
+        c.check("p19 ids unique", Set(assets.map { $0.id }).count == assets.count)
+        for category in ControlAssetCategory.allCases {
+            let inCategory = ControlAssetLibrary.assets(in: category)
+            c.check("p19 names unique \(category.rawValue)",
+                    Set(inCategory.map { $0.name }).count == inCategory.count)
+        }
+
+        c.check("p19 every asset has metadata", assets.allSatisfy { asset in
+            let metadata = asset.metadata
+            return metadata.role == asset.role &&
+                metadata.function == asset.function &&
+                !asset.accessibilityLabelTemplate.isEmpty &&
+                !asset.tags.isEmpty
+        })
+
+        let layers = assets.map { $0.makeLayer(at: VPoint(x: 8, y: 12)) }
+        c.check("p19 every asset creates non-zero layer",
+                layers.allSatisfy { $0.frame.width > 0 && $0.frame.height > 0 })
+        c.check("p19 layer kinds match categories",
+                zip(assets, layers).allSatisfy { asset, layer in asset.category.layerKind == layer.kind })
+        c.check("p19 control metadata present",
+                zip(assets, layers).allSatisfy { asset, layer in
+                    asset.category == .button ? layer.control != nil : layer.control != nil
+                })
+        c.check("p19 meter assets are readout metadata",
+                ControlAssetLibrary.assets(in: .meter).allSatisfy {
+                    $0.behaviour == .meterReadout && $0.metadata.interaction == .none
+                })
+
+        let sampleLayers = ControlAssetCategory.allCases.compactMap {
+            ControlAssetLibrary.assets(in: $0).first?.makeLayer(at: .zero)
+        }
+        let src = (try? CodeGenService().generate(Document(name: "AssetControls", roots: sampleLayers)).contents) ?? ""
+        c.check("p19 codegen includes controls import", src.contains("import VUAControls"))
+        c.check("p19 codegen includes knob", src.contains("KnobView("))
+        c.check("p19 codegen includes fader", src.contains("FaderView("))
+        c.check("p19 codegen includes slider", src.contains("Slider(value:"))
+        c.check("p19 codegen includes button", src.contains("Button(action:"))
+        c.check("p19 codegen includes toggle", src.contains("Toggle("))
+        c.check("p19 codegen includes meter", src.contains("MeterView("))
+        c.check("p19 generated SwiftUI braces balanced",
+                src.filter { $0 == "{" }.count == src.filter { $0 == "}" }.count)
+
+        let search = ControlAssetLibrary.search("neon", in: .meter)
+        c.check("p19 asset search works", !search.isEmpty && search.allSatisfy { $0.tags.contains("neon") || $0.visualStyle.family == "Neon" })
+    }
+
     // MARK: Phase 17 — Functional asset metadata
     do {
         // Defaults & promotion.

@@ -230,4 +230,15 @@ extension DocumentStore {
         selection = [layer.id]
         repositoryStatus = "Inserted “\(preset.name)”."
     }
+
+    /// Inserts a functional control asset (Phase 19) centered on the canvas.
+    func insertControlAsset(_ asset: ControlAsset) {
+        let canvas = document.canvasSize
+        let origin = VPoint(x: max(0, (canvas.width - asset.defaultSize.width) / 2),
+                            y: max(0, (canvas.height - asset.defaultSize.height) / 2))
+        let layer = LayerTree.cloneWithNewIDs(asset.makeLayer(at: origin))
+        mutate { LayerTree.insert(layer, into: &$0.roots, parentID: nil) }
+        selection = [layer.id]
+        repositoryStatus = "Inserted control asset “\(asset.name)”."
+    }
 }

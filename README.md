@@ -203,7 +203,17 @@ system keeps design and production-quality code in sync.
   after a successful write. Repo scanning detects `Package.swift`/`.xcodeproj`/
   `.xcworkspace` and the conventional `Sources`/`Views`/`UI`/`Components` folders.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 303 checks).
+- **Phase 19 — Control asset library expansion (done):** new functional
+  **Control Assets** sidebar with 120 reusable assets: 20 each for knobs,
+  faders, sliders, buttons, switches, and meters. Each asset has a stable id,
+  category, asset role/function, default size, visual style metadata,
+  behaviour hint, range/default/unit where relevant, accessibility label
+  template, tags, live thumbnail preview, and layer creation support. These
+  complement the Phase 16 preset browser rather than replacing it; inserted
+  assets create real non-zero layers with `ControlMetadata` so generated
+  SwiftUI still emits buildable controls including `MeterView`.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 331 checks).
 
 ## Requirements
 
