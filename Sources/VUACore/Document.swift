@@ -76,8 +76,10 @@ public enum CodeGenTarget: String, Codable, Hashable, Sendable, CaseIterable {
     case swiftUI
     case uiKit
     case appKit
-    // Reserved for expansion.
     case react
+    case reactNative
+    case htmlCSS
+    case electronRenderer
     case flutter
     case jetpackCompose
 
@@ -87,12 +89,22 @@ public enum CodeGenTarget: String, Codable, Hashable, Sendable, CaseIterable {
         case .uiKit: return "UIKit"
         case .appKit: return "AppKit"
         case .react: return "React"
+        case .reactNative: return "React Native"
+        case .htmlCSS: return "HTML/CSS"
+        case .electronRenderer: return "Electron Renderer"
         case .flutter: return "Flutter"
         case .jetpackCompose: return "Jetpack Compose"
         }
     }
 
-    public var isImplemented: Bool { self == .swiftUI }
+    public var isImplemented: Bool {
+        switch self {
+        case .swiftUI, .uiKit, .appKit, .react, .reactNative, .htmlCSS, .electronRenderer, .flutter:
+            return true
+        case .jetpackCompose:
+            return false
+        }
+    }
 }
 
 // MARK: - Read-only tree traversal

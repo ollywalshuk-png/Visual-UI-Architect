@@ -40,9 +40,32 @@ final class SwiftUIGeneratorTests: XCTestCase {
         XCTAssertTrue(source.contains(".position(x: 80, y: 62)"))
     }
 
+    func testMultiTargetServiceGeneratesReactHTMLFlutterAndNativeTargets() throws {
+        let service = CodeGenService()
+        let cases: [(CodeGenTarget, String, [String])] = [
+            (.react, "GeneratedView.jsx", ["export default function GeneratedView", "data-vua-anchor='playButton'", "onClick={viewModel.playButtonAction"]),
+            (.reactNative, "GeneratedView.native.jsx", ["import { Image, Pressable, StyleSheet, Switch, Text, View }", "nativeID='playButton'", "onPress={viewModel.playButtonAction"]),
+            (.htmlCSS, "index.html", ["<!doctype html>", "data-vua-anchor=\"playButton\"", "data-vua-action=\"playButtonAction\""]),
+            (.electronRenderer, "renderer.html", ["data-vua-target", "electron-renderer", "data-vua-anchor=\"playButton\""]),
+            (.flutter, "GeneratedView.dart", ["class GeneratedView extends StatelessWidget", "Positioned(", "ElevatedButton(onPressed:"]),
+            (.uiKit, "GeneratedViewController.swift", ["import UIKit", "final class GeneratedViewController: UIViewController", "accessibilityIdentifier = \"playButton\""]),
+            (.appKit, "GeneratedViewController.swift", ["import AppKit", "final class GeneratedViewController: NSViewController", "NSUserInterfaceItemIdentifier(\"playButton\")"])
+        ]
+
+        for (target, fileName, expectedSnippets) in cases {
+            var doc = sampleDocument()
+            doc.codeGenTarget = target
+            let source = try service.generate(doc)
+            XCTAssertEqual(source.fileName, fileName, target.displayName)
+            for snippet in expectedSnippets {
+                XCTAssertTrue(source.contents.contains(snippet), "\(target.displayName) missing \(snippet)\n\(source.contents)")
+            }
+        }
+    }
+
     func testUnsupportedTargetThrows() {
         var doc = sampleDocument()
-        doc.codeGenTarget = .flutter
+        doc.codeGenTarget = .jetpackCompose
         XCTAssertThrowsError(try CodeGenService().generate(doc))
     }
 }
