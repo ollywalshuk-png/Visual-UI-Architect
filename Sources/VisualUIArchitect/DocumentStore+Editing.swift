@@ -158,8 +158,8 @@ extension DocumentStore {
         addLayer(.line)
         if let id = selection.first {
             mutate { LayerTree.update(id, in: &$0.roots) { l in
-                l.line = LineSpec(start: VPoint(x: 0, y: l.frame.height / 2),
-                                  end: VPoint(x: l.frame.width, y: l.frame.height / 2))
+                l.frame.size.height = max(l.frame.height, 24)
+                l.line = LineTool.makeDefault(width: l.frame.width, height: l.frame.height)
                 l.style.borderColor = .white
                 l.style.borderWidth = 2
                 l.role = .decoration
@@ -240,5 +240,16 @@ extension DocumentStore {
         mutate { LayerTree.insert(layer, into: &$0.roots, parentID: nil) }
         selection = [layer.id]
         repositoryStatus = "Inserted control asset “\(asset.name)”."
+    }
+
+    func updateSelectedLine(_ transform: @escaping (inout LineSpec) -> Void) {
+        guard let id = selection.first else { return }
+        mutate { doc in
+            LayerTree.update(id, in: &doc.roots) { layer in
+                var spec = layer.line ?? LineTool.makeDefault(width: layer.frame.width, height: layer.frame.height)
+                transform(&spec)
+                layer.line = spec
+            }
+        }
     }
 }

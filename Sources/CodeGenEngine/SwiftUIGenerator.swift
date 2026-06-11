@@ -328,14 +328,44 @@ public struct SwiftUIGenerator: CodeGenerator {
                                           end: VPoint(x: layer.frame.width, y: layer.frame.height / 2))
         b.block("Path { path in") { b in
             b.line("path.move(to: CGPoint(x: \(fmt(line.start.x)), y: \(fmt(line.start.y))))")
-            b.line("path.addLine(to: CGPoint(x: \(fmt(line.end.x)), y: \(fmt(line.end.y))))")
+            switch line.effectiveConnector {
+            case .straight:
+                b.line("path.addLine(to: CGPoint(x: \(fmt(line.end.x)), y: \(fmt(line.end.y))))")
+            case .curved:
+                let c1 = line.controlPoint1 ?? VPoint(x: layer.frame.width * 0.33, y: line.start.y)
+                let c2 = line.controlPoint2 ?? VPoint(x: layer.frame.width * 0.66, y: line.end.y)
+                b.line("path.addCurve(to: CGPoint(x: \(fmt(line.end.x)), y: \(fmt(line.end.y))), control1: CGPoint(x: \(fmt(c1.x)), y: \(fmt(c1.y))), control2: CGPoint(x: \(fmt(c2.x)), y: \(fmt(c2.y))))")
+            case .elbow:
+                let elbow = VPoint(x: line.end.x, y: line.start.y)
+                b.line("path.addLine(to: CGPoint(x: \(fmt(elbow.x)), y: \(fmt(elbow.y))))")
+                b.line("path.addLine(to: CGPoint(x: \(fmt(line.end.x)), y: \(fmt(line.end.y))))")
+            }
+            if line.arrowStart {
+                emitArrowhead(into: &b, tip: line.start, from: line.end)
+            }
+            if line.arrowEnd {
+                emitArrowhead(into: &b, tip: line.end, from: line.start)
+            }
         }
         b.line("}")
         let width = layer.style.borderWidth > 0 ? layer.style.borderWidth : 2
-        let stroke = line.dashed
-            ? "StrokeStyle(lineWidth: \(fmt(width)), dash: [6, 4])"
-            : "StrokeStyle(lineWidth: \(fmt(width)), lineCap: .round)"
+        let dash = line.isDotted ? ", dash: [1, \(fmt(max(2, width * 2)))]"
+            : (line.dashed ? ", dash: [6, 4]" : "")
+        let stroke = "StrokeStyle(lineWidth: \(fmt(width)), lineCap: .\(line.effectiveCap.rawValue), lineJoin: .\(line.effectiveJoin.rawValue)\(dash))"
         b.indented { $0.line(".stroke(\(strokeColorExpr(layer)), style: \(stroke))") }
+    }
+
+    private func emitArrowhead(into b: inout SourceBuilder, tip: VPoint, from: VPoint) {
+        let angle = atan2(tip.y - from.y, tip.x - from.x)
+        let length = 10.0
+        let spread = Double.pi / 7
+        let a = VPoint(x: tip.x - cos(angle - spread) * length,
+                       y: tip.y - sin(angle - spread) * length)
+        let c = VPoint(x: tip.x - cos(angle + spread) * length,
+                       y: tip.y - sin(angle + spread) * length)
+        b.line("path.move(to: CGPoint(x: \(fmt(a.x)), y: \(fmt(a.y))))")
+        b.line("path.addLine(to: CGPoint(x: \(fmt(tip.x)), y: \(fmt(tip.y))))")
+        b.line("path.addLine(to: CGPoint(x: \(fmt(c.x)), y: \(fmt(c.y))))")
     }
 
     private func emitPolygon(_ layer: Layer, into b: inout SourceBuilder) {

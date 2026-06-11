@@ -100,3 +100,23 @@ extension LayerStyle.FontWeight {
         }
     }
 }
+
+extension LineCapStyle {
+    var swiftUI: CGLineCap {
+        switch self {
+        case .butt: return .butt
+        case .round: return .round
+        case .square: return .square
+        }
+    }
+}
+
+extension LineJoinStyle {
+    var swiftUI: CGLineJoin {
+        switch self {
+        case .miter: return .miter
+        case .round: return .round
+        case .bevel: return .bevel
+        }
+    }
+}

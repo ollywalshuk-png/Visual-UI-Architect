@@ -102,19 +102,68 @@ public struct ShadowSpec: Codable, Hashable, Sendable {
 
 /// A straight line / arrow / connector. Points are in the layer's local frame
 /// space (0,0 = top-left of the frame), so the line moves/resizes with it.
+public enum LineCapStyle: String, Codable, Hashable, Sendable, CaseIterable {
+    case butt, round, square
+}
+
+public enum LineJoinStyle: String, Codable, Hashable, Sendable, CaseIterable {
+    case miter, round, bevel
+}
+
+public enum LineConnectorMode: String, Codable, Hashable, Sendable, CaseIterable {
+    case straight, curved, elbow
+}
+
+public enum LineSnapMode: String, Codable, Hashable, Sendable, CaseIterable {
+    case none, layerEdge, layerCenter
+}
+
 public struct LineSpec: Codable, Hashable, Sendable {
     public var start: VPoint
     public var end: VPoint
     public var dashed: Bool
     public var arrowStart: Bool
     public var arrowEnd: Bool
+    public var dotted: Bool?
+    public var lineCap: LineCapStyle?
+    public var lineJoin: LineJoinStyle?
+    public var dividerMode: Bool?
+    public var connectorMode: LineConnectorMode?
+    public var snapMode: LineSnapMode?
+    public var controlPoint1: VPoint?
+    public var controlPoint2: VPoint?
+
     public init(start: VPoint, end: VPoint, dashed: Bool = false,
-                arrowStart: Bool = false, arrowEnd: Bool = false) {
+                arrowStart: Bool = false, arrowEnd: Bool = false,
+                dotted: Bool = false, lineCap: LineCapStyle = .round,
+                lineJoin: LineJoinStyle = .round, dividerMode: Bool = false,
+                connectorMode: LineConnectorMode = .straight,
+                snapMode: LineSnapMode = .none,
+                controlPoint1: VPoint? = nil, controlPoint2: VPoint? = nil) {
         self.start = start
         self.end = end
         self.dashed = dashed
         self.arrowStart = arrowStart
         self.arrowEnd = arrowEnd
+        self.dotted = dotted
+        self.lineCap = lineCap
+        self.lineJoin = lineJoin
+        self.dividerMode = dividerMode
+        self.connectorMode = connectorMode
+        self.snapMode = snapMode
+        self.controlPoint1 = controlPoint1
+        self.controlPoint2 = controlPoint2
+    }
+
+    public var effectiveCap: LineCapStyle { lineCap ?? .round }
+    public var effectiveJoin: LineJoinStyle { lineJoin ?? .round }
+    public var effectiveConnector: LineConnectorMode { connectorMode ?? .straight }
+    public var effectiveSnap: LineSnapMode { snapMode ?? .none }
+    public var isDotted: Bool { dotted ?? false }
+    public var isDivider: Bool { dividerMode ?? false }
+
+    public var length: Double {
+        hypot(end.x - start.x, end.y - start.y)
     }
 }
 

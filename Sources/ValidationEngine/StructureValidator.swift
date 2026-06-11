@@ -1,5 +1,6 @@
 import Foundation
 import VUACore
+import LayerEngine
 
 /// Phase 7 structural checks: invisible/zero-size layers, invalid polygons,
 /// fully-masked content, missing asset references, and broken group hierarchy.
@@ -74,7 +75,26 @@ public struct StructureValidator: Sendable {
                     recommendation: "Verify the visible region is intended.",
                     layerIDs: [layer.id]))
             }
+
+            for diagnostic in LineTool.validate(layer, canvasSize: document.canvasSize) {
+                issues.append(ValidationIssue(
+                    severity: diagnostic.code == .unsupportedConnector ? .info : .warning,
+                    category: .structure,
+                    message: diagnostic.message,
+                    recommendation: lineRecommendation(for: diagnostic.code),
+                    layerIDs: [layer.id]))
+            }
         }
         return issues
+    }
+
+    private func lineRecommendation(for code: LineToolDiagnosticCode) -> String {
+        switch code {
+        case .zeroLength: return "Move the start or end point so the line has length."
+        case .invisibleStroke: return "Set a positive stroke width and visible stroke colour."
+        case .invalidArrow: return "Lengthen the line or remove one arrowhead."
+        case .unsupportedConnector: return "Add explicit connector handles if exact routing matters."
+        case .lineOutsideCanvas: return "Move the line back inside the canvas or resize the canvas."
+        }
     }
 }

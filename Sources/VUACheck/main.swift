@@ -1504,6 +1504,86 @@ func runChecks() async {
         c.check("p20 codegen emits midi comment", src.contains("// MIDI CC: 74"))
     }
 
+    // MARK: Phase 21 — Refined line tool
+    do {
+        let straight = Layer(name: "Line", kind: .line,
+                             frame: VRect(x: 0, y: 0, width: 120, height: 24),
+                             style: LayerStyle(borderColor: .white, borderWidth: 2),
+                             line: LineSpec(start: VPoint(x: 0, y: 12),
+                                            end: VPoint(x: 120, y: 12)))
+        let straightSrc = (try? CodeGenService().generate(Document(roots: [straight])).contents) ?? ""
+        c.check("p21 line start/end generate path",
+                straightSrc.contains("path.move(to: CGPoint(x: 0, y: 12))") &&
+                straightSrc.contains("path.addLine(to: CGPoint(x: 120, y: 12))"))
+
+        let dashed = Layer(name: "Dashed", kind: .line,
+                           frame: VRect(x: 0, y: 0, width: 120, height: 24),
+                           style: LayerStyle(borderColor: .white, borderWidth: 2),
+                           line: LineSpec(start: VPoint(x: 0, y: 12), end: VPoint(x: 120, y: 12),
+                                          dashed: true, lineCap: .butt, lineJoin: .bevel))
+        let dashedSrc = (try? CodeGenService().generate(Document(roots: [dashed])).contents) ?? ""
+        c.check("p21 dashed line generates SwiftUI",
+                dashedSrc.contains("dash: [6, 4]") && dashedSrc.contains("lineCap: .butt") && dashedSrc.contains("lineJoin: .bevel"))
+
+        let dotted = Layer(name: "Dotted", kind: .line,
+                           frame: VRect(x: 0, y: 0, width: 120, height: 24),
+                           style: LayerStyle(borderColor: .white, borderWidth: 3),
+                           line: LineSpec(start: VPoint(x: 0, y: 12), end: VPoint(x: 120, y: 12),
+                                          dotted: true))
+        let dottedSrc = (try? CodeGenService().generate(Document(roots: [dotted])).contents) ?? ""
+        c.check("p21 dotted line generates SwiftUI", dottedSrc.contains("dash: [1, 6]"))
+
+        let arrow = Layer(name: "Arrow", kind: .line,
+                          frame: VRect(x: 0, y: 0, width: 140, height: 40),
+                          style: LayerStyle(borderColor: .white, borderWidth: 2),
+                          line: LineSpec(start: VPoint(x: 10, y: 20), end: VPoint(x: 130, y: 20),
+                                         arrowEnd: true))
+        let arrowSrc = (try? CodeGenService().generate(Document(roots: [arrow])).contents) ?? ""
+        c.check("p21 arrow line generates SwiftUI",
+                arrowSrc.components(separatedBy: "path.addLine(to:").count >= 4)
+
+        let curved = Layer(name: "Curve", kind: .line,
+                           frame: VRect(x: 0, y: 0, width: 160, height: 80),
+                           style: LayerStyle(borderColor: .white, borderWidth: 2),
+                           line: LineSpec(start: VPoint(x: 0, y: 40), end: VPoint(x: 160, y: 40),
+                                          connectorMode: .curved,
+                                          controlPoint1: VPoint(x: 40, y: 0),
+                                          controlPoint2: VPoint(x: 120, y: 80)))
+        let curvedSrc = (try? CodeGenService().generate(Document(roots: [curved])).contents) ?? ""
+        c.check("p21 curved connector generates Path", curvedSrc.contains("path.addCurve(to:"))
+
+        let elbow = LineSpec(start: VPoint(x: 0, y: 10), end: VPoint(x: 100, y: 60),
+                             connectorMode: .elbow, snapMode: .layerEdge)
+        c.check("p21 connector metadata round-trips",
+                (try? JSONDecoder().decode(LineSpec.self, from: JSONEncoder().encode(elbow))).map {
+                    $0.effectiveConnector == .elbow && $0.effectiveSnap == .layerEdge
+                } == true)
+
+        let zero = Layer(name: "ZeroLine", kind: .line,
+                         frame: VRect(x: 0, y: 0, width: 20, height: 20),
+                         style: LayerStyle(borderColor: .white, borderWidth: 2),
+                         line: LineSpec(start: VPoint(x: 5, y: 5), end: VPoint(x: 5, y: 5)))
+        c.check("p21 zero-length line diagnostic",
+                LineTool.validate(zero, canvasSize: VSize(width: 200, height: 200)).contains { $0.code == .zeroLength })
+
+        let invisible = Layer(name: "InvisibleLine", kind: .line,
+                              frame: VRect(x: 0, y: 0, width: 20, height: 20),
+                              style: LayerStyle(borderColor: .white, borderWidth: 0),
+                              line: LineSpec(start: VPoint(x: 0, y: 10), end: VPoint(x: 20, y: 10)))
+        c.check("p21 invisible stroke diagnostic",
+                LineTool.validate(invisible, canvasSize: VSize(width: 200, height: 200)).contains { $0.code == .invisibleStroke })
+
+        let outside = Layer(name: "OutsideLine", kind: .line,
+                            frame: VRect(x: 190, y: 0, width: 40, height: 20),
+                            style: LayerStyle(borderColor: .white, borderWidth: 2),
+                            line: LineSpec(start: VPoint(x: 0, y: 10), end: VPoint(x: 40, y: 10)))
+        c.check("p21 outside canvas diagnostic",
+                LineTool.validate(outside, canvasSize: VSize(width: 200, height: 200)).contains { $0.code == .lineOutsideCanvas })
+
+        let constrained = LineTool.constrainedEnd(start: .zero, proposed: VPoint(x: 30, y: 10))
+        c.check("p21 shift constraint snaps angle", abs(constrained.y) < 0.001 || abs(abs(constrained.x) - abs(constrained.y)) < 0.001)
+    }
+
     // MARK: Phase 18 — Existing UI import / screen loader
     do {
         // A representative importable view with anchors + one unsupported call.

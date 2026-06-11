@@ -44,6 +44,10 @@ struct InspectorView: View {
                     gradientSection(layer)
                 }
 
+                if layer.kind == .line {
+                    lineSection(layer)
+                }
+
                 organisationSection(layer)
 
                 constraintsSection(layer)
@@ -71,6 +75,87 @@ struct InspectorView: View {
                 title: "No Selection",
                 systemImage: "cursorarrow.rays",
                 description: "Select a layer to edit its properties.")
+        }
+    }
+
+    // MARK: - Line section
+
+    @ViewBuilder
+    private func lineSection(_ layer: Layer) -> some View {
+        let line = layer.line ?? LineSpec(start: VPoint(x: 0, y: layer.frame.height / 2),
+                                          end: VPoint(x: layer.frame.width, y: layer.frame.height / 2))
+        Section("Line") {
+            LabeledContent("Start X") {
+                TextField("0", value: Binding(
+                    get: { line.start.x },
+                    set: { v in store.updateSelectedLine { $0.start.x = v } }),
+                    format: .number.precision(.fractionLength(0...1)))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+            LabeledContent("Start Y") {
+                TextField("0", value: Binding(
+                    get: { line.start.y },
+                    set: { v in store.updateSelectedLine { $0.start.y = v } }),
+                    format: .number.precision(.fractionLength(0...1)))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+            LabeledContent("End X") {
+                TextField("0", value: Binding(
+                    get: { line.end.x },
+                    set: { v in store.updateSelectedLine { $0.end.x = v } }),
+                    format: .number.precision(.fractionLength(0...1)))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+            LabeledContent("End Y") {
+                TextField("0", value: Binding(
+                    get: { line.end.y },
+                    set: { v in store.updateSelectedLine { $0.end.y = v } }),
+                    format: .number.precision(.fractionLength(0...1)))
+                .textFieldStyle(.roundedBorder).frame(width: 80)
+            }
+            Toggle("Dashed", isOn: Binding(
+                get: { line.dashed },
+                set: { v in store.updateSelectedLine { $0.dashed = v; if v { $0.dotted = false } } }))
+            Toggle("Dotted", isOn: Binding(
+                get: { line.isDotted },
+                set: { v in store.updateSelectedLine { $0.dotted = v; if v { $0.dashed = false } } }))
+            LabeledContent("Cap") {
+                Picker("", selection: Binding(
+                    get: { line.effectiveCap },
+                    set: { v in store.updateSelectedLine { $0.lineCap = v } })) {
+                    ForEach(LineCapStyle.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }.labelsHidden()
+            }
+            LabeledContent("Join") {
+                Picker("", selection: Binding(
+                    get: { line.effectiveJoin },
+                    set: { v in store.updateSelectedLine { $0.lineJoin = v } })) {
+                    ForEach(LineJoinStyle.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }.labelsHidden()
+            }
+            Toggle("Arrow Start", isOn: Binding(
+                get: { line.arrowStart },
+                set: { v in store.updateSelectedLine { $0.arrowStart = v } }))
+            Toggle("Arrow End", isOn: Binding(
+                get: { line.arrowEnd },
+                set: { v in store.updateSelectedLine { $0.arrowEnd = v } }))
+            Toggle("Divider Mode", isOn: Binding(
+                get: { line.isDivider },
+                set: { v in store.updateSelectedLine { $0.dividerMode = v } }))
+            LabeledContent("Connector") {
+                Picker("", selection: Binding(
+                    get: { line.effectiveConnector },
+                    set: { v in store.updateSelectedLine { $0.connectorMode = v } })) {
+                    ForEach(LineConnectorMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }.labelsHidden()
+            }
+            LabeledContent("Snap") {
+                Picker("", selection: Binding(
+                    get: { line.effectiveSnap },
+                    set: { v in store.updateSelectedLine { $0.snapMode = v } })) {
+                    ForEach(LineSnapMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }.labelsHidden()
+            }
         }
     }
 

@@ -55,7 +55,7 @@ rebuild app bundle → update README → commit when green.
 | P18 | Existing UI import / screen loader | ✅ done | import SwiftUI file/repo → candidates+confidence → editable layers → hash-guarded apply |
 | P19 | Control asset library expansion | ✅ done | 120 functional control assets: 20× knob/fader/slider/button/switch/meter, metadata + live previews |
 | P20 | Control behaviour engine | ✅ done | behaviour profiles + inspector binding/MIDI/automation controls + codegen metadata comments |
-| P21 | Refined line tool | 🔜 next | richer line geometry, connectors, diagnostics |
+| P21 | Refined line tool | ✅ done | line geometry, dashes/dots/caps/joins/arrows/connectors/snap metadata + diagnostics |
 | P22 | Existing UI import polish | 🔜 next | clearer previews/provenance/no-anchor messaging |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when

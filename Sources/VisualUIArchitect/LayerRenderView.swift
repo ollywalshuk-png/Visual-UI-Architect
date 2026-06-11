@@ -108,10 +108,40 @@ struct LayerRenderView: View {
         let width = layer.style.borderWidth > 0 ? layer.style.borderWidth : 2
         return Path { p in
             p.move(to: CGPoint(x: spec.start.x, y: spec.start.y))
-            p.addLine(to: CGPoint(x: spec.end.x, y: spec.end.y))
+            switch spec.effectiveConnector {
+            case .straight:
+                p.addLine(to: CGPoint(x: spec.end.x, y: spec.end.y))
+            case .curved:
+                let c1 = spec.controlPoint1 ?? VPoint(x: layer.frame.width * 0.33, y: spec.start.y)
+                let c2 = spec.controlPoint2 ?? VPoint(x: layer.frame.width * 0.66, y: spec.end.y)
+                p.addCurve(to: CGPoint(x: spec.end.x, y: spec.end.y),
+                           control1: CGPoint(x: c1.x, y: c1.y),
+                           control2: CGPoint(x: c2.x, y: c2.y))
+            case .elbow:
+                p.addLine(to: CGPoint(x: spec.end.x, y: spec.start.y))
+                p.addLine(to: CGPoint(x: spec.end.x, y: spec.end.y))
+            }
+            if spec.arrowStart { addArrowhead(to: &p, tip: spec.start, from: spec.end) }
+            if spec.arrowEnd { addArrowhead(to: &p, tip: spec.end, from: spec.start) }
         }
         .stroke(layer.style.borderColor?.swiftUI ?? layer.style.foregroundColor?.swiftUI ?? .primary,
-                style: StrokeStyle(lineWidth: width, lineCap: .round, dash: spec.dashed ? [6, 4] : []))
+                style: StrokeStyle(lineWidth: width,
+                                   lineCap: spec.effectiveCap.swiftUI,
+                                   lineJoin: spec.effectiveJoin.swiftUI,
+                                   dash: spec.isDotted ? [1, max(2, width * 2)] : (spec.dashed ? [6, 4] : [])))
+    }
+
+    private func addArrowhead(to path: inout Path, tip: VPoint, from: VPoint) {
+        let angle = atan2(tip.y - from.y, tip.x - from.x)
+        let length = 10.0
+        let spread = Double.pi / 7
+        let a = VPoint(x: tip.x - cos(angle - spread) * length,
+                       y: tip.y - sin(angle - spread) * length)
+        let c = VPoint(x: tip.x - cos(angle + spread) * length,
+                       y: tip.y - sin(angle + spread) * length)
+        path.move(to: CGPoint(x: a.x, y: a.y))
+        path.addLine(to: CGPoint(x: tip.x, y: tip.y))
+        path.addLine(to: CGPoint(x: c.x, y: c.y))
     }
 
     private var polygonContent: some View {

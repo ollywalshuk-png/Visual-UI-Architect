@@ -224,7 +224,17 @@ system keeps design and production-quality code in sync.
   binding, AU id, MIDI CC, and automation. Generated SwiftUI remains buildable
   and emits behaviour/binding comments instead of fake app logic.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 348 checks).
+- **Phase 21 — Refined line tool (done):** line layers now support explicit
+  start/end points, stroke width/colour/opacity through the existing style
+  model, dashed and dotted strokes, caps, joins, arrowheads, divider mode,
+  straight/curved/elbow connector modes, snap intent metadata (edge/centre),
+  and Shift-style 0/45/90-degree constraint math in `LayerEngine`. The
+  inspector exposes the line geometry and connector controls. Generated SwiftUI
+  emits real `Path` output with line caps/joins/dashes/arrows/curves/elbows,
+  and validation reports zero-length lines, invisible strokes, invalid arrows,
+  unsupported/generated connector handles, and lines outside the canvas.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 358 checks).
 
 ## Requirements
 
