@@ -30,6 +30,9 @@ public struct Asset: Identifiable, Codable, Hashable, Sendable {
     public var isLocked: Bool
     /// Organisational tags for the asset library (e.g. "panel", "knob", "bg").
     public var tags: [String]
+    /// Phase 17: functional metadata (role / function / binding). Optional so
+    /// legacy `Asset` JSON (without this key) decodes unchanged.
+    public var metadata: AssetMetadata?
 
     public init(
         id: UUID = UUID(),
@@ -39,7 +42,8 @@ public struct Asset: Identifiable, Codable, Hashable, Sendable {
         intrinsicSize: VSize = .zero,
         scale: Int = 1,
         isLocked: Bool = false,
-        tags: [String] = []
+        tags: [String] = [],
+        metadata: AssetMetadata? = nil
     ) {
         self.id = id
         self.name = name
@@ -49,5 +53,25 @@ public struct Asset: Identifiable, Codable, Hashable, Sendable {
         self.scale = scale
         self.isLocked = isLocked
         self.tags = tags
+        self.metadata = metadata
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, path, format, intrinsicSize, scale, isLocked, tags, metadata
+    }
+
+    /// Custom decoder so assets saved before Phase 17 (no `metadata` key)
+    /// still load — `metadata` defaults to nil.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        path = try c.decode(String.self, forKey: .path)
+        format = try c.decode(Format.self, forKey: .format)
+        intrinsicSize = try c.decode(VSize.self, forKey: .intrinsicSize)
+        scale = try c.decode(Int.self, forKey: .scale)
+        isLocked = try c.decode(Bool.self, forKey: .isLocked)
+        tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
+        metadata = try c.decodeIfPresent(AssetMetadata.self, forKey: .metadata)
     }
 }

@@ -65,6 +65,12 @@ public struct AssetLibrary: Sendable {
         public var size: VSize
         public var isBackground: Bool
         public var isLocked: Bool
+        /// Phase 17: the layer kind chosen for the dropped layer (image by
+        /// default; knobCap → .knob, faderCap → .fader, etc.).
+        public var layerKind: LayerKind
+        /// Phase 17: control metadata to attach to the dropped layer when the
+        /// asset carries a functional binding.
+        public var control: ControlMetadata?
         /// Top-left origin for a drop centered on `point`.
         public func frame(centeredOn point: VPoint) -> VRect {
             VRect(x: point.x - size.width / 2, y: point.y - size.height / 2,
@@ -72,8 +78,9 @@ public struct AssetLibrary: Sendable {
         }
     }
 
-    /// Computes placement for an asset: preserves aspect (capped), and treats
-    /// `bg`/`background`-tagged assets as locked background layers.
+    /// Computes placement for an asset: preserves aspect (capped), respects
+    /// functional `AssetMetadata` (Phase 17), and treats `bg`/`background`-
+    /// tagged assets as locked background layers.
     public static func placement(for asset: Asset, maxDimension: Double = 320) -> Placement {
         let intrinsic = asset.intrinsicSize
         let size: VSize
@@ -83,10 +90,36 @@ public struct AssetLibrary: Sendable {
         } else {
             size = VSize(width: 120, height: 120)
         }
-        let isBackground = asset.tags.contains {
+        let bgTagged = asset.tags.contains {
             $0.localizedCaseInsensitiveContains("bg") || $0.localizedCaseInsensitiveContains("background")
         }
-        return Placement(size: size, isBackground: isBackground, isLocked: isBackground)
+        // Metadata role drives the resulting layer kind / control binding.
+        let role = asset.metadata?.role
+        let isBackground = bgTagged || role == .backplate
+        let kind = layerKind(forRole: role, backgroundFallback: isBackground)
+        let control = asset.metadata?.binding.toControlMetadata()
+        return Placement(
+            size: size,
+            isBackground: isBackground,
+            isLocked: isBackground,
+            layerKind: kind,
+            control: control
+        )
+    }
+
+    /// Maps an asset role to the layer kind it should drop as. Image is the
+    /// default for purely decorative artwork.
+    public static func layerKind(forRole role: AssetRole?, backgroundFallback: Bool) -> LayerKind {
+        switch role {
+        case .backplate: return .background
+        case .knobCap: return .knob
+        case .faderCap: return .fader
+        case .meterLED: return .meter
+        case .button: return .button
+        case .toggleSwitch: return .toggle
+        case .faderTrack, .decoration, .icon, .texture, .none:
+            return backgroundFallback ? .background : .image
+        }
     }
 
     private func intrinsicSize(of url: URL) -> VSize {

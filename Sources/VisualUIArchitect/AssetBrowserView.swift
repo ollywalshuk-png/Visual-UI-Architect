@@ -74,6 +74,7 @@ private struct AssetCell: View {
     let asset: Asset
     let fileURL: URL
     @State private var showTags = false
+    @State private var showMetadata = false
     @State private var tagText = ""
 
     var body: some View {
@@ -87,6 +88,7 @@ private struct AssetCell: View {
                             .padding(3).foregroundStyle(.orange)
                     }
                 }
+                .overlay(alignment: .bottomLeading) { roleBadge }
             Text(asset.name).font(.caption2).lineLimit(1)
         }
         .padding(4)
@@ -99,8 +101,12 @@ private struct AssetCell: View {
             Button("Replace…") { replace() }
             Button(asset.isLocked ? "Unlock" : "Lock") { store.toggleAssetLock(asset.id) }
             Button("Edit Tags…") { tagText = asset.tags.joined(separator: ", "); showTags = true }
+            Button("Functional Metadata…") { showMetadata = true }
             Divider()
             Button("Delete", role: .destructive) { store.deleteAsset(asset.id) }
+        }
+        .sheet(isPresented: $showMetadata) {
+            AssetMetadataInspectorView(asset: asset).environmentObject(store)
         }
         .popover(isPresented: $showTags) {
             VStack(alignment: .leading) {
@@ -111,6 +117,20 @@ private struct AssetCell: View {
                 Button("Save") { commitTags() }
             }
             .padding()
+        }
+    }
+
+    /// Small role badge shown on the thumbnail for assets carrying Phase-17
+    /// functional metadata. Empty when the asset is purely decorative.
+    @ViewBuilder
+    private var roleBadge: some View {
+        if let role = asset.metadata?.role, role != .decoration {
+            Text(role.displayName)
+                .font(.system(size: 8, weight: .semibold))
+                .padding(.horizontal, 4).padding(.vertical, 1)
+                .background(Color.accentColor.opacity(0.85), in: Capsule())
+                .foregroundStyle(.white)
+                .padding(3)
         }
     }
 

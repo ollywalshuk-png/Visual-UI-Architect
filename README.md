@@ -173,7 +173,22 @@ system keeps design and production-quality code in sync.
   **live SwiftUI thumbnails** (no PNG generation — the renderer that draws
   the canvas draws the previews). Tap inserts at canvas centre.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 263 checks).
+- **Phase 17 — Functional asset metadata (done):** imported assets become
+  functional controls, not just images. Each `Asset` carries optional
+  **`AssetMetadata`** — role (backplate / knob cap / fader cap / track / meter /
+  button / switch / decoration / icon / texture), function, interaction type,
+  **rotation** and **drag** envelopes, and a production **control binding**
+  (parameter id, range, default, unit, MIDI CC, AU parameter id, automation,
+  stepped/continuous). Dropping an asset now resolves its **layer kind**
+  (knobCap → `.knob`, faderCap → `.fader`, …) and attaches a `ControlMetadata`
+  binding so generated SwiftUI emits a real `KnobView`/`FaderView`. The asset
+  browser gains a per-asset **Functional Metadata** editor with role badges and
+  live diagnostics (missing parameter id / range, invalid or inverted range,
+  default out of range, MIDI CC out of 0–127, missing step count, role↔function
+  mismatch). Backwards-compatible: legacy `Asset` JSON without `metadata`
+  decodes unchanged.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 285 checks).
 
 ## Requirements
 

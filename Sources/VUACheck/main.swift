@@ -1239,6 +1239,132 @@ func runChecks() async {
         c.check("layout preset library still loads", PresetLibrary.all.count > 0)
     }
 
+    // MARK: Phase 17 — Functional asset metadata
+    do {
+        // Defaults & promotion.
+        let knobDefaults = AssetMetadata.defaults(for: .knobCap)
+        c.check("knob defaults role+function", knobDefaults.role == .knobCap && knobDefaults.function == .rotaryControl)
+        c.check("knob defaults rotation", knobDefaults.rotation?.sweepDegrees == 270)
+
+        let thinBinding = AssetControlBinding(parameterID: "cutoff")
+        c.check("thin binding does not promote", thinBinding.toControlMetadata() == nil)
+
+        var fullBinding = thinBinding
+        fullBinding.minValue = 20; fullBinding.maxValue = 20000; fullBinding.defaultValue = 1000
+        fullBinding.unit = .hertz
+        let promoted = fullBinding.toControlMetadata()
+        c.check("full binding promotes to ControlMetadata",
+                promoted?.parameterID == "cutoff" && promoted?.minValue == 20 && promoted?.maxValue == 20000)
+
+        // Backwards-compat: a legacy Asset JSON without `metadata` still decodes.
+        let legacyJSON = #"""
+        {
+          "id":"11111111-1111-1111-1111-111111111111",
+          "name":"PanelBG","path":"p.png",
+          "format":"png",
+          "intrinsicSize":{"width":1280,"height":800},
+          "scale":1,"isLocked":false,"tags":["bg"]
+        }
+        """#
+        let legacy = try JSONDecoder().decode(Asset.self, from: legacyJSON.data(using: .utf8)!)
+        c.check("legacy asset decodes with nil metadata", legacy.metadata == nil)
+
+        // Round-trip with metadata.
+        var stored = Asset(name: "Cutoff Knob", path: "k.png", format: .png,
+                           intrinsicSize: VSize(width: 100, height: 100), tags: ["knob"])
+        stored.metadata = {
+            var m = AssetMetadata.defaults(for: .knobCap)
+            m.binding.parameterID = "cutoff"
+            m.binding.minValue = 20; m.binding.maxValue = 20000; m.binding.defaultValue = 1000
+            m.binding.unit = .hertz; m.binding.midiCC = 74; m.binding.auParameterID = "au_cutoff"
+            return m
+        }()
+        let encoded = try JSONEncoder().encode(stored)
+        let decoded = try JSONDecoder().decode(Asset.self, from: encoded)
+        c.check("asset metadata round-trip role", decoded.metadata?.role == .knobCap)
+        c.check("asset metadata round-trip binding", decoded.metadata?.binding.parameterID == "cutoff"
+                && decoded.metadata?.binding.midiCC == 74
+                && decoded.metadata?.binding.auParameterID == "au_cutoff")
+
+        // Placement: metadata drives layer kind + control binding.
+        let placement = AssetLibrary.placement(for: stored)
+        c.check("placement layer kind from role", placement.layerKind == .knob)
+        c.check("placement control populated", placement.control?.parameterID == "cutoff")
+        c.check("placement frame centred",
+                placement.frame(centeredOn: VPoint(x: 100, y: 200)).midX == 100 &&
+                placement.frame(centeredOn: VPoint(x: 100, y: 200)).midY == 200)
+
+        // Plain decorative asset still drops as .image.
+        let decor = Asset(name: "Decor", path: "d.png", format: .png,
+                          intrinsicSize: VSize(width: 80, height: 80))
+        c.check("decorative asset is image", AssetLibrary.placement(for: decor).layerKind == .image)
+
+        // Background-tagged asset still drops as .background and locked.
+        let bg = Asset(name: "Backplate", path: "bp.png", format: .png,
+                       intrinsicSize: VSize(width: 800, height: 400), tags: ["background"])
+        let bgPlacement = AssetLibrary.placement(for: bg)
+        c.check("background placement", bgPlacement.layerKind == .background && bgPlacement.isLocked)
+
+        // Diagnostics: parameter id missing, range missing, default out of range, MIDI CC out of range, invalid range.
+        var bad = stored
+        bad.metadata?.binding.parameterID = nil
+        let badIssues = AssetMetadataDiagnostics.validate(bad)
+        c.check("diag missing parameter id",
+                badIssues.contains { $0.code == .missingParameterID && $0.severity == .error })
+
+        var rangeBad = stored
+        rangeBad.metadata?.binding.minValue = 200; rangeBad.metadata?.binding.maxValue = 100
+        c.check("diag invalid range",
+                AssetMetadataDiagnostics.validate(rangeBad).contains { $0.code == .invalidRange })
+
+        var defOOR = stored
+        defOOR.metadata?.binding.defaultValue = 99_999
+        c.check("diag default out of range",
+                AssetMetadataDiagnostics.validate(defOOR).contains { $0.code == .defaultOutOfRange })
+
+        var ccBad = stored
+        ccBad.metadata?.binding.midiCC = 200
+        c.check("diag midi CC out of range",
+                AssetMetadataDiagnostics.validate(ccBad).contains { $0.code == .midiCCOutOfRange })
+
+        var stepped = stored
+        stepped.metadata?.binding.isContinuous = false
+        stepped.metadata?.binding.stepCount = nil
+        c.check("diag missing steps",
+                AssetMetadataDiagnostics.validate(stepped).contains { $0.code == .missingSteps })
+
+        var mismatch = stored
+        mismatch.metadata?.function = .linearControl // knobCap role + linearControl function
+        c.check("diag role/function mismatch",
+                AssetMetadataDiagnostics.validate(mismatch).contains { $0.code == .roleFunctionMismatch })
+
+        // Tagged-as-control without metadata → missingMetadata warning.
+        let taggedNoMeta = Asset(name: "K", path: "k.png", format: .png,
+                                 intrinsicSize: VSize(width: 64, height: 64), tags: ["knob"])
+        c.check("diag missingMetadata for tagged asset",
+                AssetMetadataDiagnostics.validate(taggedNoMeta).contains { $0.code == .missingMetadata })
+
+        // Bulk validator across multiple assets.
+        let bulk = AssetMetadataDiagnostics.validate(assets: [stored, decor, bad, taggedNoMeta])
+        c.check("bulk validator returns issues",
+                bulk.contains { $0.code == .missingParameterID } &&
+                bulk.contains { $0.code == .missingMetadata })
+
+        // Codegen: a knob layer wired from asset metadata produces a KnobView call.
+        let knobLayer = Layer(name: "K", kind: .knob,
+                              frame: VRect(x: 0, y: 0, width: 64, height: 64),
+                              assetID: stored.id,
+                              control: stored.metadata?.binding.toControlMetadata())
+        let doc = Document(roots: [knobLayer], assets: [stored])
+        let src = (try? CodeGenService().generate(doc).contents) ?? ""
+        c.check("codegen emits knob from asset metadata", src.contains("KnobView(") && src.contains("20...20000"))
+        c.check("codegen braces balanced",
+                src.filter { $0 == "{" }.count == src.filter { $0 == "}" }.count)
+    } catch {
+        FileHandle.standardError.write(Data("p17 exception: \(error)\n".utf8))
+        c.check("p17 exception", false)
+    }
+
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")
     exit(c.failures == 0 ? 0 : 1)
 }

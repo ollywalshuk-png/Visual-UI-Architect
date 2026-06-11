@@ -80,19 +80,64 @@ extension DocumentStore {
         mutate { LayerTree.update(id, in: &$0.roots) { $0.assetID = assetID } }
     }
 
-    /// Creates an image layer for an asset at a canvas point (drag-drop target).
+    /// Creates a layer for an asset at a canvas point (drag-drop target). When
+    /// the asset carries Phase-17 functional metadata, the resulting layer's
+    /// kind (knob/fader/meter/button/toggle) and control binding are derived
+    /// from it; otherwise it falls back to .image / locked .background.
     func dropAsset(_ assetID: UUID, at point: VPoint) {
         guard let asset = document.asset(id: assetID) else { return }
         let placement = AssetLibrary.placement(for: asset)
         let layer = Layer(
             name: asset.name,
-            kind: placement.isBackground ? .background : .image,
+            kind: placement.layerKind,
             frame: placement.frame(centeredOn: point),
             assetID: assetID,
-            isLocked: placement.isLocked)
+            isLocked: placement.isLocked,
+            control: placement.control)
         // Backgrounds go to the back (index 0); everything else on top.
         mutate { LayerTree.insert(layer, into: &$0.roots, parentID: nil, at: placement.isBackground ? 0 : nil) }
         selection = [layer.id]
+    }
+
+    // MARK: - Asset metadata (Phase 17)
+
+    /// Updates the functional metadata on an asset (assignment / removal),
+    /// participating in undo/redo and dirty tracking.
+    func updateAssetMetadata(_ assetID: UUID, _ transform: @escaping (inout AssetMetadata) -> Void) {
+        mutate { doc in
+            guard let idx = doc.assets.firstIndex(where: { $0.id == assetID }) else { return }
+            var meta = doc.assets[idx].metadata ?? AssetMetadata()
+            transform(&meta)
+            doc.assets[idx].metadata = meta
+        }
+    }
+
+    /// Assigns a role to an asset and seeds sensible behaviour defaults.
+    func setAssetRole(_ assetID: UUID, role: AssetRole) {
+        mutate { doc in
+            guard let idx = doc.assets.firstIndex(where: { $0.id == assetID }) else { return }
+            // Preserve existing parameter binding fields the user has set.
+            let previousBinding = doc.assets[idx].metadata?.binding ?? AssetControlBinding()
+            var seeded = AssetMetadata.defaults(for: role)
+            seeded.binding.parameterID = previousBinding.parameterID ?? seeded.binding.parameterID
+            seeded.binding.displayName = previousBinding.displayName ?? seeded.binding.displayName
+            seeded.binding.minValue = previousBinding.minValue ?? seeded.binding.minValue
+            seeded.binding.maxValue = previousBinding.maxValue ?? seeded.binding.maxValue
+            seeded.binding.defaultValue = previousBinding.defaultValue ?? seeded.binding.defaultValue
+            seeded.binding.unit = previousBinding.unit
+            seeded.binding.midiCC = previousBinding.midiCC
+            seeded.binding.auParameterID = previousBinding.auParameterID
+            seeded.binding.automationEnabled = previousBinding.automationEnabled || seeded.binding.automationEnabled
+            doc.assets[idx].metadata = seeded
+        }
+    }
+
+    /// Removes asset metadata (reverts to a plain decorative asset).
+    func clearAssetMetadata(_ assetID: UUID) {
+        mutate { doc in
+            guard let idx = doc.assets.firstIndex(where: { $0.id == assetID }) else { return }
+            doc.assets[idx].metadata = nil
+        }
     }
 
     // MARK: - Control metadata
