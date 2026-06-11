@@ -20,6 +20,10 @@ extension DocumentStore {
         ComponentEngine.diagnose(document)
     }
 
+    func variants(for componentID: UUID) -> [ComponentVariant] {
+        document.component(id: componentID)?.variants ?? []
+    }
+
     // MARK: - Create
 
     /// Creates a master from the current selection, registers it on the
@@ -68,6 +72,37 @@ extension DocumentStore {
         repositoryStatus = "Inserted instance of '\(component.name)'."
     }
 
+    func switchSelectedComponentVariant(to variantID: UUID?) {
+        guard let id = selection.first,
+              let layer = document.layer(id: id),
+              let componentID = layer.componentID,
+              let component = document.component(id: componentID) else {
+            repositoryStatus = "Select a component instance first."
+            return
+        }
+        var ok = false
+        mutate { doc in ok = ComponentEngine.switchVariant(instanceID: id, to: variantID, component: component, in: &doc.roots) }
+        repositoryStatus = ok ? "Switched component variant." : "Variant switch failed."
+    }
+
+    func addOverrideToSelectedComponent(property: String, value: String) {
+        guard let id = selection.first else { return }
+        var ok = false
+        mutate { doc in
+            ok = ComponentEngine.addOverride(
+                ComponentOverride(property: property, valueDescription: value),
+                to: id, in: &doc.roots)
+        }
+        repositoryStatus = ok ? "Added local override." : "Override blocked by locked property."
+    }
+
+    func lockSelectedComponentProperty(_ property: String) {
+        guard let id = selection.first else { return }
+        var ok = false
+        mutate { doc in ok = ComponentEngine.lockProperty(property, on: id, in: &doc.roots) }
+        repositoryStatus = ok ? "Locked component property." : "Property lock failed."
+    }
+
     /// Detaches the currently-selected layer from its component master.
     func detachSelectedComponentInstance() {
         guard let id = selection.first else { return }
@@ -99,6 +134,20 @@ extension DocumentStore {
                 doc.components[i].name = name
             }
         }
+    }
+
+    func createStandardVariants(for componentID: UUID) {
+        mutate { doc in
+            guard let index = doc.components.firstIndex(where: { $0.id == componentID }) else { return }
+            let names = ["Primary", "Secondary", "Danger", "Success"]
+            let existing = Set(doc.components[index].variants.map { $0.name })
+            for name in names where !existing.contains(name) {
+                var master = LayerTree.cloneWithNewIDs(doc.components[index].master)
+                master.name = "\(doc.components[index].name) \(name)"
+                doc.components[index].variants.append(ComponentVariant(name: name, master: master))
+            }
+        }
+        repositoryStatus = "Created standard component variants."
     }
 
     /// Deletes a component. If `detachInstances` is true, existing instances
@@ -139,5 +188,8 @@ private func withoutComponentID(_ layer: Layer) -> Layer {
         assetTransform: layer.assetTransform,
         rasterPaint: layer.rasterPaint,
         componentID: nil,
+        componentVariantID: nil,
+        componentOverrides: [],
+        lockedComponentProperties: [],
         children: layer.children)
 }

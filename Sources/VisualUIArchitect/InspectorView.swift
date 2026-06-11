@@ -24,6 +24,8 @@ struct InspectorView: View {
                     }
                 }
 
+                componentVariantSection(layer)
+
                 importProvenanceSection
 
                 Section("Geometry") {
@@ -83,6 +85,40 @@ struct InspectorView: View {
                 title: "No Selection",
                 systemImage: "cursorarrow.rays",
                 description: "Select a layer to edit its properties.")
+        }
+    }
+
+    @ViewBuilder
+    private func componentVariantSection(_ layer: Layer) -> some View {
+        if let componentID = layer.componentID,
+           let component = store.components.first(where: { $0.id == componentID }) {
+            Section("Component Variant") {
+                LabeledContent("Component") { Text(component.name) }
+                Picker("Variant", selection: Binding(
+                    get: { layer.componentVariantID },
+                    set: { store.switchSelectedComponentVariant(to: $0) })) {
+                    Text("Base").tag(Optional<UUID>.none)
+                    ForEach(component.variants) { variant in
+                        Text(variant.name).tag(Optional(variant.id))
+                    }
+                }
+                .pickerStyle(.menu)
+                LabeledContent("Overrides") { Text("\(layer.componentOverrides.count)") }
+                LabeledContent("Locked") { Text("\(layer.lockedComponentProperties.count)") }
+                HStack {
+                    Button("Override Size") {
+                        store.addOverrideToSelectedComponent(property: "frame.size",
+                                                             value: "\(Int(layer.frame.width))x\(Int(layer.frame.height))")
+                    }
+                    Button("Lock Size") { store.lockSelectedComponentProperty("frame.size") }
+                }
+                if !layer.componentOverrides.isEmpty {
+                    ForEach(layer.componentOverrides) { override in
+                        Label("\(override.property): \(override.valueDescription)", systemImage: "slider.horizontal.3")
+                            .font(.caption)
+                    }
+                }
+            }
         }
     }
 

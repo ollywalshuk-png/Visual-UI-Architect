@@ -281,7 +281,13 @@ system keeps design and production-quality code in sync.
   comments and custom developer code outside changed modifier calls, and shows a
   focused unified diff even outside git-backed repositories.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 394 checks).
+- **Phase 27 — Component variants and overrides (done):** components can now
+  carry named variants such as Primary, Secondary, Danger, and Success. Instances
+  can switch variants, retain inherited master values, store local overrides,
+  lock properties, surface override indicators in the inspector, and generate
+  variant-aware SwiftUI component structs.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 403 checks).
 
 ## Requirements
 

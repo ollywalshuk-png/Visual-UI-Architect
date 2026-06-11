@@ -1204,6 +1204,55 @@ func runChecks() async {
         c.check("codegen braces balanced",
                 src.filter { $0 == "{" }.count == src.filter { $0 == "}" }.count)
 
+        // Phase 27 — component variants and overrides.
+        var dangerMaster = component.master
+        dangerMaster.children = dangerMaster.children.map { child in
+            var copy = child
+            if copy.kind == .button { copy.text = "Delete" }
+            return copy
+        }
+        var variantComponent = component
+        let danger = ComponentVariant(name: "Danger", master: dangerMaster)
+        variantComponent.variants = [
+            ComponentVariant(name: "Primary", master: component.master),
+            ComponentVariant(name: "Secondary", master: component.master),
+            danger,
+            ComponentVariant(name: "Success", master: component.master)
+        ]
+        var variantRoots = [ComponentEngine.makeInstance(of: variantComponent, at: .zero)]
+        let variantInstanceID = variantRoots[0].id
+        c.check("p27 variant count", variantComponent.variants.count == 4)
+        c.check("p27 switch variant",
+                ComponentEngine.switchVariant(instanceID: variantInstanceID, to: danger.id,
+                                              component: variantComponent, in: &variantRoots)
+                && variantRoots[0].componentVariantID == danger.id)
+        c.check("p27 local override",
+                ComponentEngine.addOverride(ComponentOverride(property: "frame.size", valueDescription: "120x44"),
+                                            to: variantInstanceID, in: &variantRoots)
+                && variantRoots[0].componentOverrides.count == 1)
+        c.check("p27 locked property blocks override",
+                ComponentEngine.lockProperty("frame.size", on: variantInstanceID, in: &variantRoots)
+                && !ComponentEngine.addOverride(ComponentOverride(property: "frame.size", valueDescription: "200x50"),
+                                                to: variantInstanceID, in: &variantRoots)
+                && variantRoots[0].componentOverrides.isEmpty)
+        _ = ComponentEngine.addOverride(ComponentOverride(property: "foregroundColor", valueDescription: "red"),
+                                        to: variantInstanceID, in: &variantRoots)
+        let beforeOverrides = variantRoots[0].componentOverrides
+        _ = ComponentEngine.propagateMaster(variantComponent, in: &variantRoots)
+        c.check("p27 propagation preserves overrides", variantRoots[0].componentOverrides == beforeOverrides)
+        var missingVariantLayer = variantRoots[0]
+        missingVariantLayer.componentVariantID = UUID()
+        let missingVariantDoc = Document(roots: [missingVariantLayer], components: [variantComponent])
+        c.check("p27 missing variant diagnostic",
+                ComponentEngine.diagnose(missingVariantDoc).contains { $0.code == .missingVariant })
+        let variantDoc = Document(name: "VariantDoc", roots: variantRoots, components: [variantComponent])
+        let variantSource = (try? CodeGenService().generate(variantDoc).contents) ?? ""
+        c.check("p27 codegen emits variant switch", variantSource.contains("switch variant"))
+        c.check("p27 codegen passes variant", variantSource.contains("variant: \"Danger\""))
+        let variantJSON = try JSONEncoder().encode(variantDoc)
+        let decodedVariantDoc = try JSONDecoder().decode(Document.self, from: variantJSON)
+        c.check("p27 component variants round-trip", decodedVariantDoc.components.first?.variants.count == 4)
+
         // Real swift build of an exported component-bearing doc.
         let exDir = fm.temporaryDirectory.appendingPathComponent("vua-p15-export-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: exDir) }

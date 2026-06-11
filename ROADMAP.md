@@ -61,8 +61,8 @@ rebuild app bundle → update README → commit when green.
 | P24 | Raster drawing tool | ✅ done | non-destructive paint strokes + PNG export asset + diagnostics |
 | P25 | Vector / SVG drawing tool | ✅ done | vectorPath layer, anchors/handles, SwiftUI Path, SVG export + diagnostics |
 | P26 | Advanced SwiftUI round trip | ✅ done | preview-only apply, partial-file diffs, line anchors, unsupported-region diagnostics, CRLF preservation |
-| P27 | Component variants & overrides | 🔜 next | variants, inherited values, local overrides, locked properties |
-| P28 | Design token system | ⬜ planned | colours, typography, spacing, radius, shadows, gradients, materials |
+| P27 | Component variants & overrides | ✅ done | variants, inherited values, local overrides, locked properties, variant-aware codegen |
+| P28 | Design token system | 🔜 next | colours, typography, spacing, radius, shadows, gradients, materials |
 | P29 | Target App Injection v2 | ⬜ planned | repo/file selection, injection preview, build validation, rollback |
 | P30 | Existing App View Graph | ⬜ planned | view/component/dependency graph, source links, search, diagnostics |
 

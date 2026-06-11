@@ -28,6 +28,8 @@ public enum ComponentEngine {
             case invalidName
             case emptyInstance
             case detachedMismatch
+            case missingVariant
+            case lockedOverride
         }
         public let id = UUID()
         public var severity: Severity
@@ -97,15 +99,20 @@ public enum ComponentEngine {
     /// The instance carries a fresh clone of the master's body so the canvas
     /// can hit-test and render real layers; ids are unique on every call.
     public static func makeInstance(of component: Component, at origin: VPoint) -> Layer {
-        let body = component.master.children.map { LayerTree.cloneWithNewIDs($0) }
+        makeInstance(of: component, variantID: nil, at: origin)
+    }
+
+    public static func makeInstance(of component: Component, variantID: UUID?, at origin: VPoint) -> Layer {
+        let source = component.variant(id: variantID)?.master ?? component.master
+        let body = source.children.map { LayerTree.cloneWithNewIDs($0) }
         return Layer(
             id: UUID(),
             name: component.name,
             kind: .group,
-            frame: VRect(origin: origin, size: component.master.frame.size),
-            role: component.master.role,
+            frame: VRect(origin: origin, size: source.frame.size),
+            role: source.role,
             children: body
-        ).withComponentID(component.id)
+        ).withComponent(component.id, variantID: variantID)
     }
 
     // MARK: - Propagation
@@ -119,11 +126,57 @@ public enum ComponentEngine {
         rewriteTree(&roots) { layer in
             guard layer.componentID == component.id else { return }
             layer.name = component.name
-            layer.frame.size = component.master.frame.size
-            layer.children = component.master.children.map { LayerTree.cloneWithNewIDs($0) }
+            let selected = component.variant(id: layer.componentVariantID)?.master ?? component.master
+            let overrides = layer.componentOverrides
+            let locked = layer.lockedComponentProperties
+            layer.frame.size = selected.frame.size
+            layer.children = selected.children.map { LayerTree.cloneWithNewIDs($0) }
+            layer.componentOverrides = overrides
+            layer.lockedComponentProperties = locked
             updated += 1
         }
         return updated
+    }
+
+    @discardableResult
+    public static func switchVariant(instanceID: UUID, to variantID: UUID?, component: Component, in roots: inout [Layer]) -> Bool {
+        var switched = false
+        rewriteTree(&roots) { layer in
+            guard layer.id == instanceID, layer.componentID == component.id else { return }
+            let selected = component.variant(id: variantID)?.master ?? component.master
+            let overrides = layer.componentOverrides
+            let locked = layer.lockedComponentProperties
+            layer.componentVariantID = variantID
+            layer.frame.size = selected.frame.size
+            layer.children = selected.children.map { LayerTree.cloneWithNewIDs($0) }
+            layer.componentOverrides = overrides
+            layer.lockedComponentProperties = locked
+            switched = true
+        }
+        return switched
+    }
+
+    public static func addOverride(_ override: ComponentOverride, to instanceID: UUID, in roots: inout [Layer]) -> Bool {
+        var changed = false
+        rewriteTree(&roots) { layer in
+            guard layer.id == instanceID, layer.componentID != nil,
+                  !layer.lockedComponentProperties.contains(override.property) else { return }
+            layer.componentOverrides.removeAll { $0.property == override.property }
+            layer.componentOverrides.append(override)
+            changed = true
+        }
+        return changed
+    }
+
+    public static func lockProperty(_ property: String, on instanceID: UUID, in roots: inout [Layer]) -> Bool {
+        var changed = false
+        rewriteTree(&roots) { layer in
+            guard layer.id == instanceID, layer.componentID != nil else { return }
+            layer.lockedComponentProperties.insert(property)
+            layer.componentOverrides.removeAll { $0.property == property }
+            changed = true
+        }
+        return changed
     }
 
     /// Counts instances of each component across the layer tree.
@@ -237,6 +290,17 @@ public enum ComponentEngine {
                                  message: "Instance '\(layer.name)' has no children — re-sync from master.",
                                  componentID: cid, layerIDs: [layer.id]))
             }
+            if let variantID = layer.componentVariantID,
+               document.components.first(where: { $0.id == cid })?.variant(id: variantID) == nil {
+                out.append(.init(severity: .error, code: .missingVariant,
+                                 message: "Instance '\(layer.name)' references a missing component variant.",
+                                 componentID: cid, layerIDs: [layer.id]))
+            }
+            for override in layer.componentOverrides where layer.lockedComponentProperties.contains(override.property) {
+                out.append(.init(severity: .warning, code: .lockedOverride,
+                                 message: "Override '\(override.property)' is locked and will not apply.",
+                                 componentID: cid, layerIDs: [layer.id]))
+            }
         }
         return out
     }
@@ -257,9 +321,9 @@ public enum ComponentEngine {
 // MARK: - Small convenience
 
 private extension Layer {
-    /// Returns a copy with `componentID` set — the `id` is `let`, so we
+    /// Returns a copy with component instance metadata set — the `id` is `let`, so we
     /// rebuild via the initializer instead of in-place mutation.
-    func withComponentID(_ cid: UUID?) -> Layer {
+    func withComponent(_ cid: UUID?, variantID: UUID?) -> Layer {
         Layer(
             id: id, name: name, kind: kind, frame: frame, style: style,
             text: text, assetID: assetID, isVisible: isVisible, isLocked: isLocked,
@@ -271,6 +335,9 @@ private extension Layer {
             assetTransform: assetTransform,
             rasterPaint: rasterPaint,
             componentID: cid,
+            componentVariantID: variantID,
+            componentOverrides: componentOverrides,
+            lockedComponentProperties: lockedComponentProperties,
             children: children)
     }
 }

@@ -107,7 +107,16 @@ public struct SwiftUIGenerator: CodeGenerator {
         // Component instance: collapse to a single component-view call (the
         // child clones exist for the editor; in code we reuse the master).
         if let cid = layer.componentID, let component = document.component(id: cid) {
-            b.line("\(component.generatedTypeName)()")
+            if let variant = component.variant(id: layer.componentVariantID) {
+                b.line("\(component.generatedTypeName)(variant: \(quoted(variant.name)))")
+            } else {
+                b.line("\(component.generatedTypeName)()")
+            }
+            if !layer.componentOverrides.isEmpty {
+                b.indented { b in
+                    b.line("// VUA overrides: \(layer.componentOverrides.map { "\($0.property)=\($0.valueDescription)" }.joined(separator: ", "))")
+                }
+            }
             return
         }
         switch layer.kind {
@@ -208,6 +217,7 @@ public struct SwiftUIGenerator: CodeGenerator {
         // Component masters can also drag in the controls library.
         return document.components.contains { component in
             component.master.flattened().contains { isControl($0.kind) }
+                || component.variants.contains { $0.master.flattened().contains { isControl($0.kind) } }
         }
     }
 
@@ -221,20 +231,38 @@ public struct SwiftUIGenerator: CodeGenerator {
     private func emitComponentStruct(_ component: Component, into b: inout SourceBuilder, document: Document) {
         b.line("// MARK: Component — \(component.name)")
         b.block("struct \(component.generatedTypeName): View {") { b in
+            b.line("var variant: String = \"Base\"")
             b.block("var body: some View {") { b in
-                b.block("ZStack(alignment: .topLeading) {") { b in
-                    for child in component.master.children where child.isVisible {
-                        emit(child, into: &b, document: document)
+                if component.variants.isEmpty {
+                    emitComponentMaster(component.master, into: &b, document: document)
+                } else {
+                    b.block("Group {") { b in
+                        b.block("switch variant {") { b in
+                            for variant in component.variants {
+                                b.line("case \(quoted(variant.name)):")
+                                b.indented { inner in emitComponentMaster(variant.master, into: &inner, document: document) }
+                            }
+                            b.line("default:")
+                            b.indented { inner in emitComponentMaster(component.master, into: &inner, document: document) }
+                        }
                     }
-                }
-                b.line("}")
-                b.indented { b in
-                    b.line(".frame(width: \(fmt(component.master.frame.width)), height: \(fmt(component.master.frame.height)), alignment: .topLeading)")
                 }
             }
             b.line("}")
         }
         b.line("}")
+    }
+
+    private func emitComponentMaster(_ master: Layer, into b: inout SourceBuilder, document: Document) {
+        b.block("ZStack(alignment: .topLeading) {") { b in
+            for child in master.children where child.isVisible {
+                emit(child, into: &b, document: document)
+            }
+        }
+        b.line("}")
+        b.indented { b in
+            b.line(".frame(width: \(fmt(master.frame.width)), height: \(fmt(master.frame.height)), alignment: .topLeading)")
+        }
     }
 
     private func emitModifiers(_ layer: Layer, into b: inout SourceBuilder) {

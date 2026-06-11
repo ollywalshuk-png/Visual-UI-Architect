@@ -288,6 +288,12 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
     /// When set, this layer is an *instance* of the component with this id
     /// (its children are derived from the component master). Phase 15.
     public var componentID: UUID?
+    /// Selected variant for a component instance. Nil means inherit base master.
+    public var componentVariantID: UUID?
+    /// Local instance overrides retained when the component/variant re-syncs.
+    public var componentOverrides: [ComponentOverride]
+    /// Properties this instance may not override.
+    public var lockedComponentProperties: Set<String>
 
     public var children: [Layer]
 
@@ -318,6 +324,9 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
         assetTransform: AssetTransformSpec? = nil,
         rasterPaint: RasterPaintSpec? = nil,
         componentID: UUID? = nil,
+        componentVariantID: UUID? = nil,
+        componentOverrides: [ComponentOverride] = [],
+        lockedComponentProperties: Set<String> = [],
         children: [Layer] = []
     ) {
         self.id = id
@@ -346,6 +355,9 @@ public struct Layer: Identifiable, Codable, Hashable, Sendable {
         self.assetTransform = assetTransform
         self.rasterPaint = rasterPaint
         self.componentID = componentID
+        self.componentVariantID = componentVariantID
+        self.componentOverrides = componentOverrides
+        self.lockedComponentProperties = lockedComponentProperties
         self.children = children
     }
 

@@ -75,6 +75,7 @@ struct ComponentsBrowserView: View {
                 Menu {
                     Button("Insert Instance") { store.insertComponentInstance(component.id) }
                     Button("Update All Instances") { store.updateInstancesOfComponent(component.id) }
+                    Button("Create Standard Variants") { store.createStandardVariants(for: component.id) }
                     Divider()
                     Button("Rename…") { renameDraft = component.name; renamingID = component.id }
                     Button("Delete (detach instances)", role: .destructive) {
@@ -87,6 +88,12 @@ struct ComponentsBrowserView: View {
             .onTapGesture(count: 2) { store.insertComponentInstance(component.id) }
             if let category = component.category, !category.isEmpty {
                 Text(category).font(.caption2).foregroundStyle(.secondary)
+            }
+            if !component.variants.isEmpty {
+                Text(component.variants.map(\.name).joined(separator: " / "))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
         .alert("Rename Component", isPresented: Binding(

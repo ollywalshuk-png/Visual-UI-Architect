@@ -38,6 +38,9 @@ public extension LayerTree {
             assetTransform: layer.assetTransform,
             rasterPaint: layer.rasterPaint,
             componentID: layer.componentID,   // duplicating an instance keeps the ref
+            componentVariantID: layer.componentVariantID,
+            componentOverrides: layer.componentOverrides,
+            lockedComponentProperties: layer.lockedComponentProperties,
             children: layer.children.map { cloneWithNewIDs($0) })
     }
 
