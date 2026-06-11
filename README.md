@@ -320,7 +320,13 @@ system keeps design and production-quality code in sync.
   graphs are cached with file fingerprints for explicit refresh and large-project
   reuse.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 437 checks).
+- **Phase 33 — Import-to-edit fail-safety (done):** unanchored SwiftUI imports
+  are automatically instrumented with stable source anchors before loading into
+  the editor, so common UI can become editable and apply-capable instead of
+  temporary-only. Style write-back now emits valid SwiftUI color members for
+  existing style modifiers while preserving surrounding source.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 440 checks).
 
 ## Requirements
 

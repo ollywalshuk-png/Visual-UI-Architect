@@ -67,6 +67,7 @@ rebuild app bundle → update README → commit when green.
 | P30 | Existing App View Graph | ✅ done | view/component/dependency graph, source links, search, diagnostics |
 | P31 | UX / performance / deployment polish | ✅ done | injection summaries, graph metrics/large-graph warnings, deployment readiness diagnostics |
 | P32 | Target injection UI + round-trip depth + graph indexing | ✅ done | dedicated injection panel, text/style write-back, nav/list/form parsing, cached graph index |
+| P33 | Import-to-edit fail-safety | ✅ done | auto-anchor unanchored imports, apply-capable common SwiftUI, concrete style write-back |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when
 the project was restored from a Google Drive zip export (Drive strips

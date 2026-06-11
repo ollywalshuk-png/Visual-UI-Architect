@@ -129,6 +129,7 @@ public enum ExistingUIImport {
         public var view: ParsedView
         public var sourceHash: String
         public var hasAnchors: Bool
+        public var anchorsInjected: Bool = false
     }
 
     /// Parses the candidate's view into editable layers and computes a content
@@ -142,6 +143,60 @@ public enum ExistingUIImport {
             view: view,
             sourceHash: sourceHash(source),
             hasAnchors: candidate.hasAnchors)
+    }
+
+    /// Adds stable accessibility anchors to common SwiftUI view constructor
+    /// lines when a candidate has none, then reparses the file. This is a
+    /// pragmatic source instrumentation step: unsupported/custom code is left
+    /// untouched, existing formatting/comments are preserved, and anchors make
+    /// later partial apply safe instead of temporary-only.
+    public static func importCandidateEnsuringAnchors(_ candidate: Candidate) -> Imported? {
+        if candidate.hasAnchors { return importCandidate(candidate) }
+        guard injectAnchors(intoFile: candidate.filePath, viewName: candidate.viewName) else {
+            return importCandidate(candidate)
+        }
+        let refreshed = candidates(inFile: URL(fileURLWithPath: candidate.filePath))
+            .first { $0.viewName == candidate.viewName } ?? candidate
+        guard var imported = importCandidate(refreshed) else { return nil }
+        imported.anchorsInjected = true
+        imported.hasAnchors = true
+        return imported
+    }
+
+    @discardableResult
+    public static func injectAnchors(intoFile path: String, viewName: String) -> Bool {
+        let url = URL(fileURLWithPath: path)
+        guard let source = try? String(contentsOf: url, encoding: .utf8),
+              !source.contains(".accessibilityIdentifier(") else { return false }
+        let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var output: [String] = []
+        var inTarget = false
+        var braceDepth = 0
+        var counter = 0
+        let constructors = ["Text(", "Button(", "Image(", "Toggle(", "Slider(", "TextField(", "Picker(", "Label(", "Rectangle(", "RoundedRectangle(", "Circle(", "Capsule(", "VStack", "HStack", "ZStack", "List", "Form", "Section"]
+        for line in lines {
+            if line.contains("struct \(viewName):") { inTarget = true }
+            output.append(line)
+            if inTarget, constructors.contains(where: { line.trimmingCharacters(in: .whitespaces).hasPrefix($0) }),
+               !line.contains(".accessibilityIdentifier") {
+                let indent = String(line.prefix { $0 == " " || $0 == "\t" })
+                output.append("\(indent)    .accessibilityIdentifier(\"vua_\(viewName)_\(counter)\")")
+                counter += 1
+            }
+            if inTarget {
+                braceDepth += line.filter { $0 == "{" }.count
+                braceDepth -= line.filter { $0 == "}" }.count
+                if braceDepth <= 0, line.contains("}") { inTarget = false }
+            }
+        }
+        guard counter > 0 else { return false }
+        let updated = output.joined(separator: source.contains("\r\n") ? "\r\n" : "\n")
+        do {
+            try updated.write(to: url, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Stable content hash (FNV-1a, 64-bit) — deterministic and dependency-free,

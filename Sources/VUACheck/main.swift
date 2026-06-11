@@ -151,6 +151,7 @@ func runChecks() async {
                 // The title of the panel.
                 Text("Title")
                     .font(.system(size: 22))
+                    .foregroundStyle(.black)
                     .frame(width: 200, height: 28)
                     .position(x: 120, y: 40)
                     .accessibilityIdentifier("titleLabel")
@@ -192,6 +193,7 @@ func runChecks() async {
     let styleUpdated = (try? SourceFidelityWriter().updateStyles(
         in: viewSource, changes: ["titleLabel": LayerStyle(foregroundColor: VColor(hex: "#FF0000"), opacity: 0.5)])) ?? ""
     c.check("round-trip style writeback preserves source", styleUpdated.contains("// The title of the panel."))
+    c.check("round-trip style writes concrete color", styleUpdated.contains(".foregroundStyle(.red)"))
     let structuralSource = """
     import SwiftUI
     struct AppScreen: View {
@@ -1918,6 +1920,25 @@ func runChecks() async {
         let afterPlainImport = (try? String(contentsOf: plainURL, encoding: .utf8)) ?? ""
         c.check("p22 no-anchor import is non-destructive", beforePlainImport == afterPlainImport)
         c.check("p22 no-anchor import remains temporary", plainImport?.hasAnchors == false)
+        let autoAnchorURL = dir.appendingPathComponent("AutoAnchor.swift")
+        let autoAnchorSrc = """
+        import SwiftUI
+        struct AutoAnchor: View {
+            var body: some View {
+                VStack {
+                    Text("Editable")
+                    Button("Save") {}
+                }
+            }
+        }
+        """
+        try autoAnchorSrc.data(using: .utf8)!.write(to: autoAnchorURL)
+        let autoCandidate = ExistingUIImport.candidates(inFile: autoAnchorURL).first!
+        let autoImported = ExistingUIImport.importCandidateEnsuringAnchors(autoCandidate)
+        let anchoredSource = (try? String(contentsOf: autoAnchorURL, encoding: .utf8)) ?? ""
+        c.check("auto-anchor import injects anchors", autoImported?.anchorsInjected == true && anchoredSource.contains(".accessibilityIdentifier(\"vua_AutoAnchor_"))
+        c.check("auto-anchor import is apply-capable", autoImported?.hasAnchors == true &&
+                (autoImported?.view.roots.flatMap { $0.flattened() }.contains { $0.binding != nil } ?? false))
 
         // Source-change detection: untouched file is unchanged; edited file changed.
         let hash = imported!.sourceHash

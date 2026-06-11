@@ -339,7 +339,15 @@ private final class StyleRewriter: SyntaxRewriter {
     }
 
     private func colorExpr(_ color: VColor) -> ExprSyntax {
-        ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier("Color")))
+        let name: String
+        if color.red > 0.99 && color.green < 0.01 && color.blue < 0.01 { name = "red" }
+        else if color.red < 0.01 && color.green < 0.01 && color.blue < 0.01 { name = "black" }
+        else if color.red > 0.99 && color.green > 0.99 && color.blue > 0.99 { name = "white" }
+        else if color.red < 0.01 && color.green < 0.01 && color.blue > 0.99 { name = "blue" }
+        else { name = "primary" }
+        return ExprSyntax(MemberAccessExprSyntax(
+            period: .periodToken(),
+            declName: DeclReferenceExprSyntax(baseName: .identifier(name))))
     }
 
     private func fmt(_ value: Double) -> String {
@@ -348,5 +356,15 @@ private final class StyleRewriter: SyntaxRewriter {
 
     static func singleNumberArg(_ value: Double) -> LabeledExprListSyntax {
         LabeledExprListSyntax([LabeledExprSyntax(expression: GeometryRewriter.numberExpr(value))])
+    }
+
+    static func expr(_ source: String) -> ExprSyntax {
+        let file = Parser.parse(source: "let __v = \(source)")
+        if let item = file.statements.first,
+           let decl = item.item.as(VariableDeclSyntax.self),
+           let value = decl.bindings.first?.initializer?.value {
+            return value
+        }
+        return ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier("Color")))
     }
 }
