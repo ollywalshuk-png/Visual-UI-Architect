@@ -56,7 +56,7 @@ struct ParseContext {
 
     private mutating func parseNamedCall(name: String, call: FunctionCallExprSyntax) -> Layer? {
         switch name {
-        case "VStack", "HStack", "ZStack", "Group":
+        case "VStack", "HStack", "ZStack", "Group", "NavigationStack", "NavigationView", "List", "Form", "Section":
             var layer = Layer(name: name, kind: .container)
             let children = parseChildren(of: call)
             layer.children = children
@@ -65,8 +65,8 @@ struct ParseContext {
             if name == "Group", children.count == 1 {
                 return children[0]
             }
-            axisByLayer[layer.id] = (name == "VStack") ? .vertical
-                : (name == "HStack") ? .horizontal : .stack
+            axisByLayer[layer.id] = (name == "HStack") ? .horizontal
+                : (name == "ZStack" || name == "Group") ? .stack : .vertical
             if name != "Group" { layer.kind = .container }
             return layer
         case "Text":
@@ -82,6 +82,10 @@ struct ParseContext {
             return leaf(.image, name: "Image")
         case "Slider":
             return leaf(.slider, name: "Slider")
+        case "TextField":
+            return leaf(.text, name: "TextField", text: Self.firstStringArgument(call) ?? "Text Field")
+        case "Picker":
+            return leaf(.control, name: "Picker", text: Self.firstStringArgument(call) ?? "Picker")
         case "Spacer":
             return leaf(.container, name: "Spacer")
         case "Rectangle":

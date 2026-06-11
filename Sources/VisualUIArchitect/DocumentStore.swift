@@ -22,6 +22,7 @@ final class DocumentStore: ObservableObject {
     // Repository round-trip state (see DocumentStore+Repository.swift).
     @Published var repositoryRoot: URL?
     @Published var repositoryFiles: [RepositoryFile] = []
+    @Published var repositoryGraphIndex: RepositoryGraphIndex?
     @Published var openedFileName: String?
     // Phase 18 — existing-UI import provenance (for round-trip apply guard).
     @Published var importedSourcePath: String?

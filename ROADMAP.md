@@ -66,6 +66,7 @@ rebuild app bundle → update README → commit when green.
 | P29 | Target App Injection v2 | ✅ done | repo/file selection, injection preview, dirty/hash blocks, asset detection, rollback |
 | P30 | Existing App View Graph | ✅ done | view/component/dependency graph, source links, search, diagnostics |
 | P31 | UX / performance / deployment polish | ✅ done | injection summaries, graph metrics/large-graph warnings, deployment readiness diagnostics |
+| P32 | Target injection UI + round-trip depth + graph indexing | ✅ done | dedicated injection panel, text/style write-back, nav/list/form parsing, cached graph index |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when
 the project was restored from a Google Drive zip export (Drive strips

@@ -37,6 +37,20 @@ public struct SourceFidelityWriter {
         let rewriter = ImageRewriter(targets: collector.targets)
         return rewriter.visit(tree).description
     }
+
+    public func updateText(in source: String, changes: [String: String]) throws -> String {
+        let tree = Parser.parse(source: source)
+        let collector = TextCollector(changes: changes, viewMode: .sourceAccurate)
+        collector.walk(tree)
+        return TextRewriter(targets: collector.targets).visit(tree).description
+    }
+
+    public func updateStyles(in source: String, changes: [String: LayerStyle]) throws -> String {
+        let tree = Parser.parse(source: source)
+        let collector = StyleCollector(changes: changes, viewMode: .sourceAccurate)
+        collector.walk(tree)
+        return StyleRewriter(targets: collector.targets).visit(tree).description
+    }
 }
 
 /// The geometry edit to apply to a single modifier call.
@@ -210,5 +224,129 @@ private final class ImageRewriter: SyntaxRewriter {
             closingQuote: .stringQuoteToken())
         let arg = LabeledExprSyntax(expression: ExprSyntax(stringExpr))
         return ExprSyntax(call.with(\.arguments, LabeledExprListSyntax([arg])))
+    }
+}
+
+private final class TextCollector: SyntaxVisitor {
+    let changes: [String: String]
+    var targets: [SyntaxIdentifier: String] = [:]
+
+    init(changes: [String: String], viewMode: SyntaxTreeViewMode) {
+        self.changes = changes
+        super.init(viewMode: viewMode)
+    }
+
+    override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+        guard let member = node.calledExpression.as(MemberAccessExprSyntax.self),
+              member.declName.baseName.text == "accessibilityIdentifier",
+              let anchor = ParseContext.firstStringArgument(node),
+              let text = changes[anchor] else { return .visitChildren }
+        var current: ExprSyntax? = member.base
+        var core: FunctionCallExprSyntax?
+        while let expr = current, let call = expr.as(FunctionCallExprSyntax.self) {
+            core = call
+            current = call.calledExpression.as(MemberAccessExprSyntax.self)?.base
+        }
+        if let call = core,
+           let name = call.calledExpression.as(DeclReferenceExprSyntax.self)?.baseName.text,
+           ["Text", "Button", "Toggle", "Label"].contains(name) {
+            targets[call.id] = text
+        }
+        return .visitChildren
+    }
+}
+
+private final class TextRewriter: SyntaxRewriter {
+    let targets: [SyntaxIdentifier: String]
+    init(targets: [SyntaxIdentifier: String]) { self.targets = targets }
+
+    override func visit(_ node: FunctionCallExprSyntax) -> ExprSyntax {
+        let visited = super.visit(node)
+        guard let text = targets[node.id], let call = visited.as(FunctionCallExprSyntax.self) else { return visited }
+        let arg = LabeledExprSyntax(expression: ExprSyntax(Self.string(text)))
+        var args = Array(call.arguments)
+        if args.isEmpty { args = [arg] } else { args[0] = arg.with(\.trailingComma, args[0].trailingComma) }
+        return ExprSyntax(call.with(\.arguments, LabeledExprListSyntax(args)))
+    }
+
+    static func string(_ text: String) -> StringLiteralExprSyntax {
+        StringLiteralExprSyntax(openingQuote: .stringQuoteToken(),
+                                segments: StringLiteralSegmentListSyntax([
+                                    .stringSegment(StringSegmentSyntax(content: .stringSegment(text)))
+                                ]),
+                                closingQuote: .stringQuoteToken())
+    }
+}
+
+private struct StyleTargets {
+    var foreground: [SyntaxIdentifier: VColor] = [:]
+    var background: [SyntaxIdentifier: VColor] = [:]
+    var opacity: [SyntaxIdentifier: Double] = [:]
+    var cornerRadius: [SyntaxIdentifier: Double] = [:]
+}
+
+private final class StyleCollector: SyntaxVisitor {
+    let changes: [String: LayerStyle]
+    var targets = StyleTargets()
+
+    init(changes: [String: LayerStyle], viewMode: SyntaxTreeViewMode) {
+        self.changes = changes
+        super.init(viewMode: viewMode)
+    }
+
+    override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+        guard let member = node.calledExpression.as(MemberAccessExprSyntax.self),
+              member.declName.baseName.text == "accessibilityIdentifier",
+              let anchor = ParseContext.firstStringArgument(node),
+              let style = changes[anchor] else { return .visitChildren }
+        var current = member.base
+        while let expr = current, let call = expr.as(FunctionCallExprSyntax.self),
+              let m = call.calledExpression.as(MemberAccessExprSyntax.self) {
+            switch m.declName.baseName.text {
+            case "foregroundStyle", "foregroundColor":
+                if let c = style.foregroundColor { targets.foreground[call.id] = c }
+            case "background":
+                if let c = style.backgroundColor { targets.background[call.id] = c }
+            case "opacity":
+                targets.opacity[call.id] = style.opacity
+            case "cornerRadius":
+                targets.cornerRadius[call.id] = style.cornerRadius
+            default: break
+            }
+            current = m.base
+        }
+        return .visitChildren
+    }
+}
+
+private final class StyleRewriter: SyntaxRewriter {
+    let targets: StyleTargets
+    init(targets: StyleTargets) { self.targets = targets }
+
+    override func visit(_ node: FunctionCallExprSyntax) -> ExprSyntax {
+        let visited = super.visit(node)
+        guard let call = visited.as(FunctionCallExprSyntax.self) else { return visited }
+        if let color = targets.foreground[node.id] ?? targets.background[node.id] {
+            return ExprSyntax(call.with(\.arguments, LabeledExprListSyntax([LabeledExprSyntax(expression: colorExpr(color))])))
+        }
+        if let opacity = targets.opacity[node.id] {
+            return ExprSyntax(call.with(\.arguments, Self.singleNumberArg(opacity)))
+        }
+        if let radius = targets.cornerRadius[node.id] {
+            return ExprSyntax(call.with(\.arguments, Self.singleNumberArg(radius)))
+        }
+        return visited
+    }
+
+    private func colorExpr(_ color: VColor) -> ExprSyntax {
+        ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier("Color")))
+    }
+
+    private func fmt(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(format: "%.2f", value)
+    }
+
+    static func singleNumberArg(_ value: Double) -> LabeledExprListSyntax {
+        LabeledExprListSyntax([LabeledExprSyntax(expression: GeometryRewriter.numberExpr(value))])
     }
 }

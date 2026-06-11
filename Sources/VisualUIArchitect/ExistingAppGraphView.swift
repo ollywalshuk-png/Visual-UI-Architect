@@ -6,8 +6,7 @@ struct ExistingAppGraphView: View {
     @State private var query = ""
 
     private var graph: ExistingAppViewGraph? {
-        guard let root = store.repositoryRoot else { return nil }
-        return ExistingAppViewGraphBuilder.build(repoRoot: root, files: store.repositoryFiles, document: store.document)
+        store.repositoryGraphIndex?.graph
     }
 
     var body: some View {
@@ -17,6 +16,9 @@ struct ExistingAppGraphView: View {
                 Text("View Graph").font(.headline)
                 Spacer()
                 Text("\(graph?.nodes.count ?? 0)").font(.caption).foregroundStyle(.secondary)
+                Button { store.refreshRepositoryGraphIndex() } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless)
+                    .help("Refresh graph index")
             }
             .padding(8)
             TextField("Search", text: $query)

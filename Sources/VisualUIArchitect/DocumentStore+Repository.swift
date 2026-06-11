@@ -33,6 +33,7 @@ extension DocumentStore {
     func openRepository(at url: URL) {
         repositoryRoot = url
         repositoryFiles = RepositoryScanner(root: url).scan()
+        refreshRepositoryGraphIndex()
         repositoryStatus = "Scanned \(repositoryFiles.count) files in \(url.lastPathComponent)."
     }
 
@@ -66,7 +67,19 @@ extension DocumentStore {
         guard let source = try? String(contentsOf: url, encoding: .utf8),
               let view = SwiftUIParser().parse(source: source, filePath: url.path).first else { return }
         mutate { doc in doc.roots = view.roots }
+        refreshRepositoryGraphIndex()
         repositoryStatus = "Refreshed from external edit to \(url.lastPathComponent)."
+    }
+
+    func refreshRepositoryGraphIndex() {
+        guard let root = repositoryRoot else {
+            repositoryGraphIndex = nil
+            return
+        }
+        if let existing = repositoryGraphIndex, existing.repoRoot == root, existing.isFresh(for: repositoryFiles) {
+            return
+        }
+        repositoryGraphIndex = RepositoryGraphIndex(repoRoot: root, files: repositoryFiles, document: document)
     }
 
     // MARK: - Apply to source

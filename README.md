@@ -311,7 +311,16 @@ system keeps design and production-quality code in sync.
   includes app-bundle deployment readiness checks for the SwiftPM package,
   bundle script, Info.plist, and executable binary.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 431 checks).
+- **Phase 32 — Target injection UI, round-trip depth, graph indexing (done):**
+  a dedicated Target App Injection panel now handles target-file selection,
+  preview, dirty-repo confirmation, apply, rollback instructions, asset
+  dependencies, diff display, and build output. Round-trip write-back now covers
+  anchored text and existing style modifiers in addition to geometry/images, and
+  import recognises navigation/list/form/section/input structures. Repository
+  graphs are cached with file fingerprints for explicit refresh and large-project
+  reuse.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 437 checks).
 
 ## Requirements
 

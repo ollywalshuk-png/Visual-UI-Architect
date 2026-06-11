@@ -74,9 +74,15 @@ public struct SafeApplyPipeline {
         //    image asset name (for image/background layers with an asset).
         var framesByFile: [String: [String: VRect]] = [:]
         var imagesByFile: [String: [String: String]] = [:]
+        var textByFile: [String: [String: String]] = [:]
+        var stylesByFile: [String: [String: LayerStyle]] = [:]
         for layer in document.allLayers {
             guard let binding = layer.binding else { continue }
             framesByFile[binding.filePath, default: [:]][binding.anchorID] = layer.frame
+            if let text = layer.text, !text.isEmpty {
+                textByFile[binding.filePath, default: [:]][binding.anchorID] = text
+            }
+            stylesByFile[binding.filePath, default: [:]][binding.anchorID] = layer.style
             if (layer.kind == .image || layer.kind == .background),
                let assetID = layer.assetID, let asset = document.asset(id: assetID) {
                 imagesByFile[binding.filePath, default: [:]][binding.anchorID] = asset.name
@@ -85,7 +91,7 @@ public struct SafeApplyPipeline {
 
         // 3. Preflight every target file (Phase 12): merge markers, read-only,
         //    ambiguous/missing anchors. Block before the first byte is written.
-        let allFiles = Set(framesByFile.keys).union(imagesByFile.keys)
+        let allFiles = Set(framesByFile.keys).union(imagesByFile.keys).union(textByFile.keys).union(stylesByFile.keys)
         let safety = SourceSafety()
         var preflightIssues: [ValidationIssue] = []
         var unsupportedRegions: [String] = []
@@ -93,7 +99,10 @@ public struct SafeApplyPipeline {
             let url = relPath.hasPrefix("/")
                 ? URL(fileURLWithPath: relPath)
                 : repoRoot.appendingPathComponent(relPath)
-            let anchors = Array(Set((framesByFile[relPath] ?? [:]).keys).union((imagesByFile[relPath] ?? [:]).keys))
+            let anchors = Array(Set((framesByFile[relPath] ?? [:]).keys)
+                .union((imagesByFile[relPath] ?? [:]).keys)
+                .union((textByFile[relPath] ?? [:]).keys)
+                .union((stylesByFile[relPath] ?? [:]).keys))
             let result = safety.preflight(fileURL: url, expectedAnchors: anchors)
             unsupportedRegions.append(contentsOf: result.findings
                 .filter { $0.code == .unsupportedRegion }
@@ -134,10 +143,18 @@ public struct SafeApplyPipeline {
             if let images = imagesByFile[relPath] {
                 updated = try writer.updateImageNames(in: updated, changes: images)
             }
+            if let text = textByFile[relPath] {
+                updated = try writer.updateText(in: updated, changes: text)
+            }
+            if let styles = stylesByFile[relPath] {
+                updated = try writer.updateStyles(in: updated, changes: styles)
+            }
             if updated != source {
                 updated = Self.preserveLineEndings(from: source, in: updated)
                 let changedAnchors = Array(Set((framesByFile[relPath] ?? [:]).keys)
-                    .union((imagesByFile[relPath] ?? [:]).keys)).sorted()
+                    .union((imagesByFile[relPath] ?? [:]).keys)
+                    .union((textByFile[relPath] ?? [:]).keys)
+                    .union((stylesByFile[relPath] ?? [:]).keys)).sorted()
                 plannedChanges.append(contentsOf: changedAnchors.map { anchor in
                     if let line = SourceSafety.lineNumber(of: anchor, in: source) {
                         return "\(relPath):\(line) \(anchor)"

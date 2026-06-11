@@ -186,6 +186,33 @@ func runChecks() async {
     } else {
         c.check("round-trip reparse origin", false)
     }
+    let textUpdated = (try? SourceFidelityWriter().updateText(
+        in: viewSource, changes: ["titleLabel": "New Title"])) ?? ""
+    c.check("round-trip text writeback", textUpdated.contains("Text(\"New Title\")"))
+    let styleUpdated = (try? SourceFidelityWriter().updateStyles(
+        in: viewSource, changes: ["titleLabel": LayerStyle(foregroundColor: VColor(hex: "#FF0000"), opacity: 0.5)])) ?? ""
+    c.check("round-trip style writeback preserves source", styleUpdated.contains("// The title of the panel."))
+    let structuralSource = """
+    import SwiftUI
+    struct AppScreen: View {
+        var body: some View {
+            NavigationStack {
+                List {
+                    Section {
+                        TextField("Name", text: .constant(""))
+                        Form { Toggle("Enabled", isOn: .constant(true)) }
+                    }
+                }
+            }
+        }
+    }
+    """
+    let structuralLayers = SwiftUIParser().parse(source: structuralSource, filePath: "Screen.swift")
+        .first?.roots.flatMap { $0.flattened() } ?? []
+    c.check("round-trip parses navigation/list/form", structuralLayers.contains { $0.name == "NavigationStack" } &&
+            structuralLayers.contains { $0.name == "List" } &&
+            structuralLayers.contains { $0.name == "Form" })
+    c.check("round-trip parses text field", structuralLayers.contains { $0.kind == .text && $0.text == "Name" })
 
     // MARK: Safe-apply pipeline (real file IO + git diff)
     let fm = FileManager.default
@@ -1314,6 +1341,7 @@ func runChecks() async {
         c.check("p29 injection preview diff", previewInjection.previewDiff.contains("Text(\"New\")"))
         c.check("p29 injection summary", previewInjection.summary.contains("Marker-region") &&
                 previewInjection.changedLineCount > 0)
+        c.check("p29 replacement mode", previewInjection.replacementMode == .markerRegion)
         let afterPreviewTarget = (try? String(contentsOf: target, encoding: .utf8)) ?? ""
         c.check("p29 preview preserves comments", afterPreviewTarget.contains("// keep app comment"))
         c.check("p29 asset dependencies", previewInjection.assetDependencies == ["Logo"])
@@ -1377,6 +1405,8 @@ func runChecks() async {
         }
         let largeGraph = ExistingAppViewGraphBuilder.build(repoRoot: graphDir, files: manyFiles, document: nil)
         c.check("p30 large graph warning", largeGraph.diagnostics.contains { $0.message.contains("Large graph") })
+        let index = RepositoryGraphIndex(repoRoot: graphDir, files: graphFiles, document: Document(components: [graphComponent]))
+        c.check("graph index fresh", index.isFresh(for: graphFiles) && index.graph.stats.viewCount == 2)
 
         // UX/performance/deployment follow-up.
         let deployReport = DeploymentReadiness.inspect(projectRoot: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))

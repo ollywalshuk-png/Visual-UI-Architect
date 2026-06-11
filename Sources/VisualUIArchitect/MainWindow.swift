@@ -16,6 +16,7 @@ struct MainWindow: View {
     @State private var showBuild = false
     @State private var showHandoff = false
     @State private var showQuality = false
+    @State private var showInjection = false
     @State private var showRecovery = false
     @State private var recovered: PersistenceEngine.RecoveryStore.Recovered?
     @State private var sidebarTab = SidebarTab.layers
@@ -79,6 +80,7 @@ struct MainWindow: View {
         .sheet(isPresented: $showBuild) { BuildDiagnosticsView().environmentObject(store) }
         .sheet(isPresented: $showHandoff) { HandoffView().environmentObject(store) }
         .sheet(isPresented: $showQuality) { QualityPanelView().environmentObject(store) }
+        .sheet(isPresented: $showInjection) { TargetInjectionView().environmentObject(store) }
         .onAppear {
             if let r = store.pendingRecovery() { recovered = r; showRecovery = true }
         }
@@ -192,6 +194,10 @@ struct MainWindow: View {
 
             Button { showQuality = true } label: { Label("Quality", systemImage: "gauge.with.needle") }
                 .help("UI quality: density, spacing, contrast, accessibility, noise scores")
+
+            Button { showInjection = true } label: { Label("Inject", systemImage: "arrow.down.doc") }
+                .help("Inject generated UI into a selected target app file")
+                .disabled(store.repositoryRoot == nil)
 
             Menu {
                 Button("Preview Changes") { previewApply() }
