@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a reproducible problem in Visual UI Architect.
+title: "Bug: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest SwiftUI input, document, or workflow that reproduces the issue.
+      placeholder: |
+        1. Open ...
+        2. Import ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include macOS version, Swift version, and whether Xcode or Command Line Tools are installed.
+      placeholder: |
+        macOS:
+        swift --version:
+        xcodebuild -version:
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification output
+      description: Paste relevant output from swift build, swift test, VUACheck, or the app bundle script.
+      render: shell
+    validations:
+      required: false
