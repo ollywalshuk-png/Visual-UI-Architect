@@ -81,6 +81,12 @@ extension DocumentStore {
         // Phase 10: refresh workspace safety and block writes to a generated
         // export / build / dependency folder or a repo mid-merge/rebase.
         guard ensureSafeToWrite() else { return nil }
+        // Phase 18: if this document was imported from existing source, block
+        // when that file changed on disk since import (avoid clobbering edits).
+        if importedSourceChangedExternally {
+            repositoryStatus = "Blocked: \(openedFileName ?? "the source file") changed on disk since import. Re-import before applying."
+            return nil
+        }
         do {
             let result = try SafeApplyPipeline().apply(document: document, repoRoot: root, runBuild: runBuild)
             switch result.blockedAt {
@@ -91,6 +97,9 @@ extension DocumentStore {
                 repositoryStatus = result.filesWritten.isEmpty
                     ? "No changes to apply."
                     : "Applied to \(result.filesWritten.count) file(s)."
+                // Keep the import hash in sync with what we just wrote so the
+                // next apply isn't falsely blocked as "changed externally".
+                if !result.filesWritten.isEmpty { refreshImportedSourceHash() }
             }
             return result
         } catch {

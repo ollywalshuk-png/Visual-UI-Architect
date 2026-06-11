@@ -52,7 +52,8 @@ rebuild app bundle → update README → commit when green.
 | — | App launch fix (exec bit) | ✅ done | `3e7a7fb` |
 | P16 | Advanced control presets (250) | ✅ done | `cec98f3` |
 | P17 | Functional asset metadata | ✅ done | role/function/binding on assets; metadata-aware drop; diagnostics |
-| P18 | Existing UI import / screen loader | 🔜 next | import SwiftUI file/repo → editable layers → round-trip |
+| P18 | Existing UI import / screen loader | ✅ done | import SwiftUI file/repo → candidates+confidence → editable layers → hash-guarded apply |
+| P19 | (next) — TBD by handoff | 🔜 next | per the delivery track |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when
 the project was restored from a Google Drive zip export (Drive strips

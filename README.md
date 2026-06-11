@@ -188,7 +188,22 @@ system keeps design and production-quality code in sync.
   mismatch). Backwards-compatible: legacy `Asset` JSON without `metadata`
   decodes unchanged.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 285 checks).
+- **Phase 18 — Existing UI import / screen loader (done):** a user-facing
+  **Import Existing UI** workflow (File ▸ Import Existing UI… `⇧⌘I`, and an
+  **Import UI** toolbar button) that turns a real app's SwiftUI into editable
+  layers. Choose a `.swift` file **or** an app/repo folder; the engine scans
+  with **SwiftSyntax** (no regex) for `struct … : View` / `var body`, ignoring
+  preview-only helpers, and lists **import candidates** with a **confidence
+  score** (supported ÷ total view calls), supported/unsupported counts, anchor
+  presence, and warnings. Importing reconstructs the layer tree via the existing
+  parser and records provenance — source path, **content hash** (FNV-1a), and
+  view name. Unsupported constructs are counted and surfaced rather than
+  silently dropped. Round-trip safety: **Apply to Source blocks when the source
+  file changed on disk since import** (hash mismatch) and re-syncs the hash
+  after a successful write. Repo scanning detects `Package.swift`/`.xcodeproj`/
+  `.xcworkspace` and the conventional `Sources`/`Views`/`UI`/`Components` folders.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 303 checks).
 
 ## Requirements
 

@@ -12,6 +12,7 @@ struct MainWindow: View {
     @State private var showExport = false
     @State private var showSnapshots = false
     @State private var showWorkspace = false
+    @State private var showImportUI = false
     @State private var showBuild = false
     @State private var showHandoff = false
     @State private var showQuality = false
@@ -60,6 +61,8 @@ struct MainWindow: View {
         .sheet(isPresented: $showExport) { ExportPanelView().environmentObject(store) }
         .sheet(isPresented: $showSnapshots) { SnapshotsView().environmentObject(store) }
         .sheet(isPresented: $showWorkspace) { WorkspaceDiagnosticsView().environmentObject(store) }
+        .sheet(isPresented: $showImportUI) { ImportUIView().environmentObject(store) }
+        .onReceive(NotificationCenter.default.publisher(for: .vuaImportExistingUI)) { _ in showImportUI = true }
         .sheet(isPresented: $showBuild) { BuildDiagnosticsView().environmentObject(store) }
         .sheet(isPresented: $showHandoff) { HandoffView().environmentObject(store) }
         .sheet(isPresented: $showQuality) { QualityPanelView().environmentObject(store) }
@@ -147,6 +150,9 @@ struct MainWindow: View {
                 Label("Export", systemImage: "shippingbox")
             }
             .help("Export a portable SwiftUI package (assets + controls + manifests)")
+
+            Button { showImportUI = true } label: { Label("Import UI", systemImage: "square.and.arrow.down.on.square") }
+                .help("Import an existing SwiftUI file or app/repo into the canvas")
 
             Button { showWorkspace = true } label: { Label("Workspace", systemImage: "checkmark.shield") }
                 .help("Workspace safety diagnostics")

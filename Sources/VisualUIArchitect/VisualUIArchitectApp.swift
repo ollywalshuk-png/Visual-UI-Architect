@@ -1,6 +1,11 @@
 import SwiftUI
 import VUACore
 
+extension Notification.Name {
+    /// Posted by the File ▸ Import Existing UI… command; MainWindow opens the sheet.
+    static let vuaImportExistingUI = Notification.Name("vua.importExistingUI")
+}
+
 @main
 struct VisualUIArchitectApp: App {
     @StateObject private var store = DocumentStore()
@@ -98,6 +103,12 @@ struct FileCommands: Commands {
                 .keyboardShortcut("n", modifiers: .command)
             Button("Open…") { store.openProject() }
                 .keyboardShortcut("o", modifiers: .command)
+            Divider()
+            Button("Import Existing UI…") {
+                NotificationCenter.default.post(name: .vuaImportExistingUI, object: nil)
+            }
+            .keyboardShortcut("i", modifiers: [.command, .shift])
+            Divider()
             Menu("Open Recent") {
                 let recents = DocumentStore.recents.recents
                 if recents.isEmpty {

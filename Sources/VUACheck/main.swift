@@ -1365,6 +1365,99 @@ func runChecks() async {
         c.check("p17 exception", false)
     }
 
+    // MARK: Phase 18 — Existing UI import / screen loader
+    do {
+        // A representative importable view with anchors + one unsupported call.
+        let supportedSrc = """
+        import SwiftUI
+        struct HomeScreen: View {
+            var body: some View {
+                ZStack(alignment: .topLeading) {
+                    // Title
+                    Text("Welcome")
+                        .font(.system(size: 22))
+                        .frame(width: 200, height: 28)
+                        .position(x: 120, y: 30)
+                        .accessibilityIdentifier("title")
+                    Button("Start") {}
+                        .frame(width: 120, height: 44)
+                        .position(x: 90, y: 100)
+                        .accessibilityIdentifier("startButton")
+                    Chart { }   // unsupported on first pass
+                }
+            }
+        }
+
+        struct NotAView { let x = 1 }   // must be ignored
+
+        struct HelperView: View {
+            var body: some View { VStack { Text("Hi") } }
+        }
+        """
+
+        let cands = ExistingUIImport.candidates(inSource: supportedSrc, filePath: "/tmp/Home.swift")
+        c.check("scan finds view candidates", cands.contains { $0.viewName == "HomeScreen" })
+        c.check("scan ignores non-View struct", !cands.contains { $0.viewName == "NotAView" })
+        c.check("scan finds multiple views", cands.count == 2)
+        let home = cands.first { $0.viewName == "HomeScreen" }!
+        c.check("candidate reports anchors", home.hasAnchors)
+        c.check("candidate counts unsupported", home.unsupportedElementCount >= 1)
+        c.check("candidate confidence < 1 with unsupported", home.confidence < 1.0 && home.confidence > 0)
+        c.check("candidate warns about unsupported", home.warnings.contains { $0.contains("unsupported") })
+
+        // Anchor-less view warns and is still importable.
+        let noAnchorSrc = """
+        import SwiftUI
+        struct Plain: View { var body: some View { VStack { Text("a"); Text("b") } } }
+        """
+        let plain = ExistingUIImport.candidates(inSource: noAnchorSrc, filePath: "/tmp/Plain.swift").first!
+        c.check("no-anchor candidate flagged", !plain.hasAnchors &&
+                plain.warnings.contains { $0.localizedCaseInsensitiveContains("anchor") })
+
+        // Import from a real temp file → editable layers + source hash.
+        let dir = fm.temporaryDirectory.appendingPathComponent("vua-import-\(UUID().uuidString)")
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        let fileURL = dir.appendingPathComponent("Home.swift")
+        try supportedSrc.data(using: .utf8)!.write(to: fileURL)
+
+        let fileCands = ExistingUIImport.candidates(inFile: fileURL)
+        let imported = ExistingUIImport.importCandidate(fileCands.first { $0.viewName == "HomeScreen" }!)
+        c.check("import parses into layers", (imported?.view.roots.first?.flattened().count ?? 0) > 1)
+        c.check("import stores source hash", !(imported?.sourceHash.isEmpty ?? true))
+        c.check("import preserves anchors", imported?.view.roots.flatMap { $0.flattened() }
+                .contains { $0.binding?.anchorID == "startButton" } ?? false)
+
+        // Source-change detection: untouched file is unchanged; edited file changed.
+        let hash = imported!.sourceHash
+        c.check("unchanged source not flagged", !ExistingUIImport.sourceChanged(at: fileURL.path, since: hash))
+        try (supportedSrc + "\n// edited").data(using: .utf8)!.write(to: fileURL)
+        c.check("edited source flagged changed", ExistingUIImport.sourceChanged(at: fileURL.path, since: hash))
+        // Deleted file counts as changed (blocks apply).
+        try fm.removeItem(at: fileURL)
+        c.check("deleted source flagged changed", ExistingUIImport.sourceChanged(at: fileURL.path, since: hash))
+
+        // Hash determinism.
+        c.check("source hash deterministic",
+                ExistingUIImport.sourceHash("abc") == ExistingUIImport.sourceHash("abc") &&
+                ExistingUIImport.sourceHash("abc") != ExistingUIImport.sourceHash("abd"))
+
+        // Repo scan finds views and detects project shape.
+        let repo = fm.temporaryDirectory.appendingPathComponent("vua-import-repo-\(UUID().uuidString)")
+        try fm.createDirectory(at: repo.appendingPathComponent("Sources/App"), withIntermediateDirectories: true)
+        try "// swift-tools-version: 6.0".data(using: .utf8)!.write(to: repo.appendingPathComponent("Package.swift"))
+        try supportedSrc.data(using: .utf8)!.write(to: repo.appendingPathComponent("Sources/App/Home.swift"))
+        defer { try? fm.removeItem(at: repo) }
+        let repoCands = ExistingUIImport.scanRepository(repo)
+        c.check("repo scan finds views", repoCands.contains { $0.viewName == "HomeScreen" })
+        c.check("repo scan sets repoRoot", repoCands.allSatisfy { $0.repoRoot != nil })
+        let proj = ExistingUIImport.detectProject(repo)
+        c.check("project detects Package.swift + Sources", proj.hasPackageSwift && proj.uiDirectories.contains("Sources"))
+    } catch {
+        FileHandle.standardError.write(Data("p18 exception: \(error)\n".utf8))
+        c.check("p18 exception", false)
+    }
+
     print("VUACheck: \(c.passed) passed, \(c.failures) failed")
     exit(c.failures == 0 ? 0 : 1)
 }

@@ -23,6 +23,10 @@ final class DocumentStore: ObservableObject {
     @Published var repositoryRoot: URL?
     @Published var repositoryFiles: [RepositoryFile] = []
     @Published var openedFileName: String?
+    // Phase 18 — existing-UI import provenance (for round-trip apply guard).
+    @Published var importedSourcePath: String?
+    @Published var importedSourceHash: String?
+    @Published var importedViewName: String?
     @Published var repositoryStatus: String = ""
     var fileWatcher: FileWatcher?
     /// Repeating autosave timer (see DocumentStore+Persistence.swift).
