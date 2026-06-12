@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import VUACore
 import ExportIntegrityEngine
 
 /// Export panel: pick a destination, choose options, run the export, and see
@@ -11,6 +12,7 @@ struct ExportPanelView: View {
     @State private var destination: URL?
     @State private var moduleName: String = "GeneratedUI"
     @State private var includeControls: Bool = true
+    @State private var includeMultiTargetSources = false
     @State private var result: ExportResult?
     @State private var errorMessage: String?
 
@@ -75,6 +77,7 @@ struct ExportPanelView: View {
                     .textFieldStyle(.roundedBorder).frame(width: 220)
             }
             Toggle("Include VUAControls sources", isOn: $includeControls)
+            Toggle("Include multi-target sources", isOn: $includeMultiTargetSources)
             HStack {
                 Spacer()
                 Button { runExport() } label: { Label("Export", systemImage: "arrow.up.doc.fill") }
@@ -92,6 +95,21 @@ struct ExportPanelView: View {
                     fileRow("Asset manifest", result.assetManifestPath)
                     fileRow("Parameter manifest", result.parameterManifestPath)
                     fileRow("Export report", result.reportPath)
+                }
+                if !result.additionalCodeFiles.isEmpty {
+                    section("Target sources") {
+                        ForEach(Array(result.additionalCodeFiles.enumerated()), id: \.offset) { _, file in
+                            HStack {
+                                Image(systemName: icon(for: file.target)).foregroundStyle(.secondary)
+                                Text(file.target.displayName).frame(width: 140, alignment: .leading)
+                                Text(file.relativePath).font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer()
+                            }
+                        }
+                    }
                 }
                 section("Assets (\(result.assets.count))") {
                     ForEach(Array(result.assets.enumerated()), id: \.offset) { _, asset in
@@ -186,7 +204,11 @@ struct ExportPanelView: View {
         guard let destination else { return }
         result = nil; errorMessage = nil
         let exportRoot = destination.appendingPathComponent("\(moduleName)-Export")
-        switch store.exportPackage(to: exportRoot, moduleName: moduleName, includeControls: includeControls) {
+        switch store.exportPackage(
+            to: exportRoot,
+            moduleName: moduleName,
+            includeControls: includeControls,
+            includeMultiTargetSources: includeMultiTargetSources) {
         case .success(let r): result = r
         case .failure(let error): errorMessage = "\(error)"
         }
@@ -209,6 +231,16 @@ struct ExportPanelView: View {
         case .error: return .red
         case .warning: return .orange
         case .info: return .secondary
+        }
+    }
+
+    private func icon(for target: CodeGenTarget) -> String {
+        switch target {
+        case .swiftUI, .uiKit, .appKit: return "curlybraces"
+        case .react, .reactNative: return "atom"
+        case .htmlCSS, .electronRenderer: return "globe"
+        case .flutter: return "diamond"
+        case .jetpackCompose: return "square.stack.3d.up"
         }
     }
 

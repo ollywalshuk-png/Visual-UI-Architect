@@ -636,7 +636,10 @@ func runChecks() async {
 
         let result = try ExportIntegrityPipeline().export(
             document: doc,
-            request: ExportRequest(destination: exportDir, viewName: "Trinity8View"))
+            request: ExportRequest(
+                destination: exportDir,
+                viewName: "Trinity8View",
+                additionalCodeGenTargets: [.react, .reactNative, .htmlCSS, .electronRenderer, .flutter, .uiKit, .appKit]))
 
         c.check("export wrote generated view", fm.fileExists(atPath: result.generatedCodePath.path))
         c.check("export wrote asset manifest", fm.fileExists(atPath: result.assetManifestPath.path))
@@ -649,6 +652,16 @@ func runChecks() async {
         c.check("export has Package.swift", fm.fileExists(atPath: exportDir.appendingPathComponent("Package.swift").path))
         c.check("export no errors", !result.hasErrors)
         c.check("export parameter manifest non-empty", !result.parameters.isEmpty)
+        let additionalTargets = Set(result.additionalCodeFiles.map(\.target))
+        c.check("export wrote multi-target sources",
+                additionalTargets == Set([.react, .reactNative, .htmlCSS, .electronRenderer, .flutter, .uiKit, .appKit]) &&
+                fm.fileExists(atPath: exportDir.appendingPathComponent("Targets/React/Trinity8View.jsx").path) &&
+                fm.fileExists(atPath: exportDir.appendingPathComponent("Targets/ReactNative/Trinity8View.native.jsx").path) &&
+                fm.fileExists(atPath: exportDir.appendingPathComponent("Targets/HTMLCSS/index.html").path) &&
+                fm.fileExists(atPath: exportDir.appendingPathComponent("Targets/ElectronRenderer/renderer.html").path) &&
+                fm.fileExists(atPath: exportDir.appendingPathComponent("Targets/Flutter/Trinity8View.dart").path) &&
+                fm.fileExists(atPath: exportDir.appendingPathComponent("Targets/UIKit/Trinity8ViewController.swift").path) &&
+                fm.fileExists(atPath: exportDir.appendingPathComponent("Targets/AppKit/Trinity8ViewController.swift").path))
 
         // The big one: build the exported package as a real SwiftPM project.
         let p = Process()

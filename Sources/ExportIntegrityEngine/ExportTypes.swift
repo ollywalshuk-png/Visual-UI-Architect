@@ -20,19 +20,23 @@ public struct ExportRequest: Sendable {
     public var viewName: String
     /// When true, `VUAControls` sources are copied into the export as a local module.
     public var includeControlsLibrary: Bool
+    /// Additional implemented codegen targets to emit beside the buildable SwiftUI package.
+    public var additionalCodeGenTargets: [CodeGenTarget]
 
     public init(
         destination: URL,
         targetKind: ExportTargetKind = .swiftPackage,
         moduleName: String = "GeneratedUI",
         viewName: String = "GeneratedView",
-        includeControlsLibrary: Bool = true
+        includeControlsLibrary: Bool = true,
+        additionalCodeGenTargets: [CodeGenTarget] = []
     ) {
         self.destination = destination
         self.targetKind = targetKind
         self.moduleName = moduleName
         self.viewName = viewName
         self.includeControlsLibrary = includeControlsLibrary
+        self.additionalCodeGenTargets = additionalCodeGenTargets
     }
 }
 
@@ -99,6 +103,7 @@ public struct ExportDiagnostic: Hashable, Sendable, Codable {
         case placeholderParameter      // ControlMetadata looks unreviewed
         case controlNotProductionBound // visual control with no binding/anchor
         case unavailableImport         // generated code imports a module we can't satisfy
+        case unsupportedCodegenTarget  // requested secondary target has no generator
     }
 
     public var severity: Severity
@@ -107,11 +112,20 @@ public struct ExportDiagnostic: Hashable, Sendable, Codable {
     public var detail: String?
 }
 
+/// One generated source file emitted for a secondary framework target.
+public struct ExportedCodeFile: Hashable, Sendable {
+    public var target: CodeGenTarget
+    public var fileName: String
+    public var path: URL
+    public var relativePath: String
+}
+
 /// Result of running the pipeline. Mirrors the brief's success criteria:
 /// generated code + assets + controls + manifest + report + validation.
 public struct ExportResult: Sendable {
     public var destination: URL
     public var generatedCodePath: URL
+    public var additionalCodeFiles: [ExportedCodeFile]
     public var assetManifestPath: URL
     public var parameterManifestPath: URL
     public var reportPath: URL

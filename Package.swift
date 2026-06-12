@@ -128,6 +128,7 @@ let package = Package(
         .testTarget(name: "ValidationEngineTests", dependencies: ["ValidationEngine", "VUACore", "LayerEngine"]),
         .testTarget(name: "RepositoryEngineTests", dependencies: ["RepositoryEngine", "VUACore", "LayerEngine"]),
         .testTarget(name: "ImportEngineTests", dependencies: ["ImportEngine", "RepositoryEngine", "VUACore"]),
+        .testTarget(name: "ExportIntegrityEngineTests", dependencies: ["ExportIntegrityEngine", "VUACore", "LayerEngine"]),
         .testTarget(name: "ComponentEngineTests", dependencies: ["ComponentEngine", "CodeGenEngine", "VUACore", "LayerEngine"]),
         .testTarget(name: "ControlBehaviourEngineTests", dependencies: ["ControlBehaviourEngine", "CodeGenEngine", "VUACore"])
     ]

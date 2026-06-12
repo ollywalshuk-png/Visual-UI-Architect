@@ -40,6 +40,10 @@ public struct ExportIntegrityPipeline: Sendable {
         let paramPlan = ParameterPlanner.plan(document: document)
         diagnostics.append(contentsOf: assetPlan.diagnostics)
         diagnostics.append(contentsOf: paramPlan.diagnostics)
+        let secondarySources = generateSecondarySources(
+            document: document,
+            request: request,
+            diagnostics: &diagnostics)
 
         // 3. Imports integrity. Generated code may only import what we ship.
         let imports = Set(GeneratedCodeScanner.imports(in: generated.contents))
@@ -69,6 +73,19 @@ public struct ExportIntegrityPipeline: Sendable {
         // Generated view.
         let codePath = layout.sourcesDir.appendingPathComponent(generated.fileName)
         try write(generated.contents, to: codePath)
+
+        var additionalCodeFiles: [ExportedCodeFile] = []
+        for source in secondarySources {
+            let dir = layout.additionalSourceDir(for: source.target)
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let path = dir.appendingPathComponent(source.generated.fileName)
+            try write(source.generated.contents, to: path)
+            additionalCodeFiles.append(ExportedCodeFile(
+                target: source.target,
+                fileName: source.generated.fileName,
+                path: path,
+                relativePath: relativePath(from: dest, to: path)))
+        }
 
         // Asset files (skip ones flagged as errors / missing sources).
         for asset in assetPlan.assets {
@@ -115,12 +132,14 @@ public struct ExportIntegrityPipeline: Sendable {
         let reportPath = dest.appendingPathComponent("EXPORT_REPORT.md")
         try write(reportText(
             request: request, includedControls: includedControls,
+            additionalCodeFiles: additionalCodeFiles,
             assetPlan: assetPlan, paramPlan: paramPlan, diagnostics: diagnostics),
             to: reportPath)
 
         return ExportResult(
             destination: dest,
             generatedCodePath: codePath,
+            additionalCodeFiles: additionalCodeFiles,
             assetManifestPath: assetManifestPath,
             parameterManifestPath: parameterManifestPath,
             reportPath: reportPath,
@@ -139,6 +158,64 @@ public struct ExportIntegrityPipeline: Sendable {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return base.appendingPathComponent("VisualUIArchitect/Assets")
+    }
+
+    private struct SecondarySource {
+        var target: CodeGenTarget
+        var generated: GeneratedSource
+    }
+
+    private func generateSecondarySources(
+        document: Document,
+        request: ExportRequest,
+        diagnostics: inout [ExportDiagnostic]
+    ) -> [SecondarySource] {
+        var seen = Set<CodeGenTarget>()
+        var sources: [SecondarySource] = []
+        for target in request.additionalCodeGenTargets where target != .swiftUI {
+            guard seen.insert(target).inserted else { continue }
+            guard target.isImplemented, let generator = secondaryGenerator(for: target, viewName: request.viewName) else {
+                diagnostics.append(ExportDiagnostic(
+                    severity: .error,
+                    code: .unsupportedCodegenTarget,
+                    message: "Additional export target '\(target.displayName)' is not implemented.",
+                    detail: "Remove it from the export request or add a generator before packaging this target."))
+                continue
+            }
+            do {
+                sources.append(SecondarySource(target: target, generated: try generator.generate(document: document)))
+            } catch {
+                diagnostics.append(ExportDiagnostic(
+                    severity: .error,
+                    code: .unsupportedCodegenTarget,
+                    message: "Could not generate \(target.displayName) export source.",
+                    detail: "\(error)"))
+            }
+        }
+        return sources
+    }
+
+    private func secondaryGenerator(for target: CodeGenTarget, viewName: String) -> (any CodeGenerator)? {
+        switch target {
+        case .swiftUI:
+            return nil
+        case .react:
+            return ReactGenerator(componentName: viewName)
+        case .reactNative:
+            return ReactNativeGenerator(componentName: viewName)
+        case .htmlCSS:
+            return HTMLCSSGenerator()
+        case .electronRenderer:
+            return ElectronRendererGenerator()
+        case .flutter:
+            return FlutterGenerator(widgetName: viewName)
+        case .uiKit:
+            return UIKitGenerator(className: "\(viewName)Controller")
+        case .appKit:
+            return AppKitGenerator(className: "\(viewName)Controller")
+        case .jetpackCompose:
+            return nil
+        }
     }
 
     /// Copies the bundled VUAControls source files into `dir`. Returns true on
@@ -212,6 +289,7 @@ public struct ExportIntegrityPipeline: Sendable {
 
     private func reportText(
         request: ExportRequest, includedControls: Bool,
+        additionalCodeFiles: [ExportedCodeFile],
         assetPlan: AssetPlanner.Plan, paramPlan: ParameterPlanner.Plan,
         diagnostics: [ExportDiagnostic]
     ) -> String {
@@ -221,6 +299,16 @@ public struct ExportIntegrityPipeline: Sendable {
         lines.append("- Target: **\(request.targetKind.rawValue)**")
         lines.append("- View: **\(request.viewName)**")
         lines.append("- VUAControls included: **\(includedControls ? "yes" : "no")**")
+        lines.append("")
+        lines.append("## Generated Sources")
+        lines.append("- SwiftUI → `Sources/\(request.moduleName)/\(request.viewName).swift`")
+        if additionalCodeFiles.isEmpty {
+            lines.append("- Additional targets: _none_")
+        } else {
+            for file in additionalCodeFiles {
+                lines.append("- \(file.target.displayName) → `\(file.relativePath)`")
+            }
+        }
         lines.append("")
         lines.append("## Assets (\(assetPlan.assets.count))")
         for a in assetPlan.assets {
@@ -252,6 +340,16 @@ public struct ExportIntegrityPipeline: Sendable {
         }
         return lines.joined(separator: "\n") + "\n"
     }
+
+    private func relativePath(from root: URL, to target: URL) -> String {
+        let rootComponents = root.standardizedFileURL.pathComponents
+        let targetComponents = target.standardizedFileURL.pathComponents
+        guard targetComponents.count >= rootComponents.count,
+              Array(targetComponents.prefix(rootComponents.count)) == rootComponents else {
+            return target.path
+        }
+        return targetComponents.dropFirst(rootComponents.count).joined(separator: "/")
+    }
 }
 
 /// Where things live inside the export root.
@@ -263,4 +361,23 @@ struct DestinationLayout {
     var resourcesDir: URL { sourcesDir.appendingPathComponent("Resources") }
     var controlsDir: URL { root.appendingPathComponent("Sources/VUAControls") }
     var manifestsDir: URL { root.appendingPathComponent("Manifests") }
+    var additionalTargetsDir: URL { root.appendingPathComponent("Targets") }
+
+    func additionalSourceDir(for target: CodeGenTarget) -> URL {
+        additionalTargetsDir.appendingPathComponent(folderName(for: target))
+    }
+
+    private func folderName(for target: CodeGenTarget) -> String {
+        switch target {
+        case .swiftUI: return "SwiftUI"
+        case .react: return "React"
+        case .reactNative: return "ReactNative"
+        case .htmlCSS: return "HTMLCSS"
+        case .electronRenderer: return "ElectronRenderer"
+        case .flutter: return "Flutter"
+        case .uiKit: return "UIKit"
+        case .appKit: return "AppKit"
+        case .jetpackCompose: return "JetpackCompose"
+        }
+    }
 }
