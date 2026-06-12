@@ -12,6 +12,9 @@ struct TargetInjectionView: View {
     @State private var allowDirtyRepo = false
     @State private var allowFullFileReplacement = false
     @State private var runBuild = true
+    @State private var insertRoute = false
+    @State private var routeFilePath = "Sources/App/Routes.swift"
+    @State private var routeRegistration = ""
     @State private var result: TargetAppInjection.Result?
 
     private var swiftFiles: [RepositoryFile] {
@@ -38,11 +41,22 @@ struct TargetInjectionView: View {
                         .disabled(createNewFile)
                     Toggle("Run swift build after apply", isOn: $runBuild)
                 }
+                Section("Routing") {
+                    Toggle("Insert route registration", isOn: $insertRoute)
+                    if insertRoute {
+                        TextField("Sources/App/Routes.swift", text: $routeFilePath)
+                        TextField("Route(\"generated\", GeneratedScreen())", text: $routeRegistration, axis: .vertical)
+                            .lineLimit(2...5)
+                    }
+                }
                 if let result {
                     Section("Result") {
                         Label(result.summary, systemImage: result.hasBlocker ? "xmark.octagon" : "checkmark.circle")
                             .foregroundStyle(result.hasBlocker ? .red : .green)
                         LabeledContent("Target") { Text(result.targetURL.path).lineLimit(2).truncationMode(.middle) }
+                        if let routeURL = result.routeURL {
+                            LabeledContent("Route") { Text(routeURL.path).lineLimit(2).truncationMode(.middle) }
+                        }
                         LabeledContent("Assets") { Text(result.assetDependencies.isEmpty ? "none" : result.assetDependencies.joined(separator: ", ")) }
                         LabeledContent("Rollback") { Text(result.rollbackPlan.joined(separator: "  |  ")).textSelection(.enabled) }
                     }
@@ -108,7 +122,13 @@ struct TargetInjectionView: View {
         createNewFile ? newFilePath.trimmingCharacters(in: .whitespacesAndNewlines) : selectedPath
     }
 
-    private var canRun: Bool { store.repositoryRoot != nil && !targetPath.isEmpty }
+    private var canRun: Bool {
+        store.repositoryRoot != nil &&
+            !targetPath.isEmpty &&
+            (!insertRoute ||
+             (!routeFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+              !routeRegistration.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+    }
 
     private func run(write: Bool) {
         guard let root = store.repositoryRoot,
@@ -121,7 +141,10 @@ struct TargetInjectionView: View {
             allowDirtyRepo: allowDirtyRepo,
             runBuild: runBuild,
             allowFullFileReplacement: !createNewFile && allowFullFileReplacement,
-            allowCreateFile: createNewFile)
+            allowCreateFile: createNewFile,
+            routeFile: insertRoute ? routeFilePath : nil,
+            routeRegistration: insertRoute ? routeRegistration : nil,
+            allowRouteInsertion: insertRoute)
         result = write ? TargetAppInjection.apply(request) : TargetAppInjection.preview(request)
     }
 

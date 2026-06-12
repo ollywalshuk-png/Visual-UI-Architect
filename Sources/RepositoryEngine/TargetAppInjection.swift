@@ -12,10 +12,15 @@ public enum TargetAppInjection {
         public var runBuild: Bool
         public var allowFullFileReplacement: Bool
         public var allowCreateFile: Bool
+        public var routeFile: String?
+        public var routeRegistration: String?
+        public var allowRouteInsertion: Bool
 
         public init(repoRoot: URL, targetFile: String, generatedSource: String,
                     expectedHash: String? = nil, allowDirtyRepo: Bool = false, runBuild: Bool = false,
-                    allowFullFileReplacement: Bool = false, allowCreateFile: Bool = false) {
+                    allowFullFileReplacement: Bool = false, allowCreateFile: Bool = false,
+                    routeFile: String? = nil, routeRegistration: String? = nil,
+                    allowRouteInsertion: Bool = false) {
             self.repoRoot = repoRoot
             self.targetFile = targetFile
             self.generatedSource = generatedSource
@@ -24,13 +29,18 @@ public enum TargetAppInjection {
             self.runBuild = runBuild
             self.allowFullFileReplacement = allowFullFileReplacement
             self.allowCreateFile = allowCreateFile
+            self.routeFile = routeFile
+            self.routeRegistration = routeRegistration
+            self.allowRouteInsertion = allowRouteInsertion
         }
     }
 
     public struct Result: Sendable {
         public enum ReplacementMode: String, Sendable { case markerRegion, fullFile, newFile }
         public var targetURL: URL
+        public var routeURL: URL?
         public var previewDiff: String
+        public var routePreviewDiff: String
         public var gitDiff: String
         public var assetDependencies: [String]
         public var diagnostics: [Diagnostic]
@@ -39,6 +49,7 @@ public enum TargetAppInjection {
         public var buildOutput: String
         public var rollbackPlan: [String]
         public var wroteFile: Bool
+        public var routeInserted: Bool
         public var replacementMode: ReplacementMode
         public var changedLineCount: Int
 
@@ -49,7 +60,8 @@ public enum TargetAppInjection {
             case .fullFile: "Full-file"
             case .newFile: "New-file"
             }
-            return "\(mode) injection, \(changedLineCount) changed line(s), \(assetDependencies.count) asset dependency(ies)."
+            let route = routeInserted ? ", route registration inserted" : ""
+            return "\(mode) injection, \(changedLineCount) changed line(s), \(assetDependencies.count) asset dependency(ies)\(route)."
         }
     }
 
@@ -58,6 +70,7 @@ public enum TargetAppInjection {
         public enum Code: String, Sendable {
             case targetMissing, targetOutsideRepository, unsupportedTarget, dirtyRepository, hashMismatch
             case sourcePreflight, buildFailed, noInjectionMarker, fullFileReplacementBlocked, createFileBlocked
+            case routeFileMissing, routeInsertionBlocked, routeAlreadyRegistered
         }
         public let id = UUID()
         public var severity: Severity
@@ -154,9 +167,26 @@ public enum TargetAppInjection {
                                          message: "No VUA injection markers found; enable full-file replacement before writing."))
             }
         }
-        let finalSource = isNewFile ? wrapGeneratedFile(request.generatedSource) : (hasMarkers ? injected : request.generatedSource)
+        var finalSource = isNewFile ? wrapGeneratedFile(request.generatedSource) : (hasMarkers ? injected : request.generatedSource)
         let replacementMode: Result.ReplacementMode = isNewFile ? .newFile : (hasMarkers ? .markerRegion : .fullFile)
-        let previewDiff = unifiedDiff(old: original, new: finalSource, filePath: diffPath)
+
+        let routePlan = prepareRouteInsertion(
+            request: request,
+            targetURL: targetURL,
+            targetSourceAfterInjection: finalSource,
+            diagnostics: &diagnostics)
+        if let routePlan, routePlan.isTargetFile {
+            finalSource = routePlan.finalSource
+        }
+
+        let targetPreviewDiff = unifiedDiff(old: original, new: finalSource, filePath: diffPath)
+        let routePreviewDiff = routePlan.map { plan in
+            plan.isTargetFile ? plan.routePreviewDiff : unifiedDiff(
+                old: plan.originalSource,
+                new: plan.finalSource,
+                filePath: plan.relativePath)
+        } ?? ""
+        let previewDiff = combined([targetPreviewDiff, routePlan?.isTargetFile == true ? "" : routePreviewDiff])
         let changedLineCount = previewDiff.split(separator: "\n").filter {
             ($0.hasPrefix("+") && !$0.hasPrefix("+++")) || ($0.hasPrefix("-") && !$0.hasPrefix("---"))
         }.count
@@ -165,6 +195,7 @@ public enum TargetAppInjection {
         var buildPassed = true
         var buildOutput = ""
         var didWriteFile = false
+        var didInsertRoute = false
 
         if write && diagnostics.allSatisfy({ $0.severity != .blocker }) {
             do {
@@ -179,6 +210,20 @@ public enum TargetAppInjection {
                 diagnostics.append(.init(severity: .blocker, code: .targetMissing,
                                          message: "Could not write target file: \(error)"))
             }
+            if diagnostics.allSatisfy({ $0.severity != .blocker }), let routePlan, routePlan.inserted {
+                if routePlan.isTargetFile {
+                    didInsertRoute = true
+                } else {
+                    do {
+                    try preserveLineEndings(from: routePlan.originalSource, in: routePlan.finalSource)
+                        .write(to: routePlan.url, atomically: true, encoding: .utf8)
+                    didInsertRoute = true
+                    } catch {
+                        diagnostics.append(.init(severity: .blocker, code: .routeInsertionBlocked,
+                                                 message: "Could not write route file: \(error)"))
+                    }
+                }
+            }
             didWriteFile = diagnostics.allSatisfy { $0.severity != .blocker }
             if request.runBuild {
                 buildRan = true
@@ -192,12 +237,18 @@ public enum TargetAppInjection {
             }
         }
 
-        let gitDiff = repo.isGitRepository() && resolvedTarget.isInsideRepository ? ((try? repo.diff(path: diffPath)) ?? "") : ""
-        return Result(targetURL: targetURL, previewDiff: previewDiff, gitDiff: gitDiff,
+        let gitDiff = repo.isGitRepository() && resolvedTarget.isInsideRepository
+            ? combined([try? repo.diff(path: diffPath), routePlan.flatMap { $0.isTargetFile ? nil : try? repo.diff(path: $0.relativePath) }])
+            : ""
+        let rollback = rollbackPlan(for: diffPath, repoRoot: request.repoRoot, isNewFile: isNewFile) +
+            (routePlan.map { $0.isTargetFile ? [] : rollbackPlan(for: $0.relativePath, repoRoot: request.repoRoot, isNewFile: false) } ?? [])
+        return Result(targetURL: targetURL, routeURL: routePlan?.url,
+                      previewDiff: previewDiff, routePreviewDiff: routePreviewDiff, gitDiff: gitDiff,
                       assetDependencies: assets, diagnostics: diagnostics,
                       buildRan: buildRan, buildPassed: buildPassed, buildOutput: buildOutput,
-                      rollbackPlan: rollbackPlan(for: diffPath, repoRoot: request.repoRoot, isNewFile: isNewFile),
+                      rollbackPlan: rollback,
                       wroteFile: didWriteFile,
+                      routeInserted: write ? didInsertRoute : (routePlan?.inserted ?? false),
                       replacementMode: replacementMode,
                       changedLineCount: changedLineCount)
     }
@@ -206,6 +257,16 @@ public enum TargetAppInjection {
         var url: URL
         var relativePath: String
         var isInsideRepository: Bool
+    }
+
+    private struct RoutePlan {
+        var url: URL
+        var relativePath: String
+        var originalSource: String
+        var finalSource: String
+        var routePreviewDiff: String
+        var inserted: Bool
+        var isTargetFile: Bool
     }
 
     private static func resolveTarget(repoRoot: URL, targetFile: String) -> ResolvedTarget {
@@ -222,6 +283,104 @@ public enum TargetAppInjection {
         return ResolvedTarget(url: resolved, relativePath: relative.isEmpty ? "." : relative, isInsideRepository: inside)
     }
 
+    private static func prepareRouteInsertion(
+        request: Request,
+        targetURL: URL,
+        targetSourceAfterInjection: String,
+        diagnostics: inout [Diagnostic]
+    ) -> RoutePlan? {
+        guard let routeFile = request.routeFile?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !routeFile.isEmpty,
+              let rawRegistration = request.routeRegistration else {
+            return nil
+        }
+        let registration = rawRegistration.trimmingCharacters(in: .newlines)
+        guard !registration.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        guard request.allowRouteInsertion else {
+            diagnostics.append(.init(
+                severity: .blocker,
+                code: .routeInsertionBlocked,
+                message: "Route insertion requires explicit opt-in before writing \(routeFile)."))
+            return nil
+        }
+
+        let resolvedRoute = resolveTarget(repoRoot: request.repoRoot, targetFile: routeFile)
+        if !resolvedRoute.isInsideRepository {
+            diagnostics.append(.init(
+                severity: .blocker,
+                code: .routeInsertionBlocked,
+                message: "Route file must stay inside the selected repository: \(routeFile)"))
+            return nil
+        }
+        if resolvedRoute.url.pathExtension.lowercased() != "swift" {
+            diagnostics.append(.init(
+                severity: .blocker,
+                code: .routeInsertionBlocked,
+                message: "Route insertion only supports Swift source files."))
+            return nil
+        }
+
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: resolvedRoute.url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            diagnostics.append(.init(
+                severity: .blocker,
+                code: .routeInsertionBlocked,
+                message: "Route insertion cannot write into a directory."))
+            return nil
+        }
+
+        let sameAsTarget = resolvedRoute.url.path == targetURL.path
+        let originalRouteSource: String
+        if sameAsTarget {
+            originalRouteSource = targetSourceAfterInjection
+        } else if let source = try? String(contentsOf: resolvedRoute.url, encoding: .utf8) {
+            originalRouteSource = source
+        } else {
+            diagnostics.append(.init(
+                severity: .blocker,
+                code: .routeFileMissing,
+                message: "Route file is missing or unreadable: \(resolvedRoute.url.path)"))
+            return nil
+        }
+
+        for finding in SourceSafety.inspect(source: originalRouteSource, fileName: resolvedRoute.url.lastPathComponent) {
+            if finding.severity == .blocker {
+                diagnostics.append(.init(severity: .blocker, code: .sourcePreflight, message: finding.message))
+            }
+        }
+
+        guard let insertion = insertRouteRegistration(in: originalRouteSource, registration: registration) else {
+            diagnostics.append(.init(
+                severity: .blocker,
+                code: .routeInsertionBlocked,
+                message: "Route file must contain // VUA:BEGIN-ROUTES and // VUA:END-ROUTES markers."))
+            return nil
+        }
+
+        if !insertion.inserted {
+            diagnostics.append(.init(
+                severity: .info,
+                code: .routeAlreadyRegistered,
+                message: "Route registration is already present; no duplicate route entry will be inserted."))
+        }
+
+        let routePreviewDiff = unifiedDiff(
+            old: originalRouteSource,
+            new: insertion.source,
+            filePath: resolvedRoute.relativePath)
+        return RoutePlan(
+            url: resolvedRoute.url,
+            relativePath: resolvedRoute.relativePath,
+            originalSource: originalRouteSource,
+            finalSource: insertion.source,
+            routePreviewDiff: routePreviewDiff,
+            inserted: insertion.inserted,
+            isTargetFile: sameAsTarget)
+    }
+
     private static func relativePath(from root: URL, to target: URL) -> String {
         let rootComponents = root.standardizedFileURL.pathComponents
         let targetComponents = target.standardizedFileURL.pathComponents
@@ -230,6 +389,24 @@ public enum TargetAppInjection {
             return target.path
         }
         return targetComponents.dropFirst(rootComponents.count).joined(separator: "/")
+    }
+
+    private static func insertRouteRegistration(in source: String, registration: String) -> (source: String, inserted: Bool)? {
+        guard let start = source.range(of: "// VUA:BEGIN-ROUTES"),
+              let end = source.range(of: "// VUA:END-ROUTES"),
+              start.lowerBound < end.upperBound else { return nil }
+
+        let routeRegion = String(source[start.upperBound..<end.lowerBound])
+        let trimmedRegistration = registration.trimmingCharacters(in: .newlines)
+        if routeRegion.contains(trimmedRegistration) {
+            return (source, false)
+        }
+
+        let beforeEnd = String(source[..<end.lowerBound])
+        let afterEnd = String(source[end.lowerBound...])
+        let prefix = beforeEnd.hasSuffix("\n") ? "" : "\n"
+        let suffix = trimmedRegistration.hasSuffix("\n") ? "" : "\n"
+        return (beforeEnd + prefix + trimmedRegistration + suffix + afterEnd, true)
     }
 
     private static func replaceInjectionRegion(in source: String, with generated: String) -> String {
@@ -274,6 +451,10 @@ public enum TargetAppInjection {
             if i < newLines.count { out.append("+\(newLines[i])") }
         }
         return out.count > 2 ? out.joined(separator: "\n") : ""
+    }
+
+    private static func combined(_ diffs: [String?]) -> String {
+        diffs.compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: "\n\n")
     }
 
     private static func preserveLineEndings(from original: String, in updated: String) -> String {

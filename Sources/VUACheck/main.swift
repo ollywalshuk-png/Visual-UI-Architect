@@ -1649,6 +1649,63 @@ func runChecks() async {
                 newScreenAfter.contains("// VUA:Owner=Visual UI Architect") &&
                 newScreenAfter.contains("struct NewScreen: View"))
 
+        // Phase 63 — marker-based route insertion.
+        let routeHost = injectDir.appendingPathComponent("RouteHost.swift")
+        let routesFile = injectDir.appendingPathComponent("Routes.swift")
+        let routeHostSource = """
+        import SwiftUI
+
+        struct RouteHost: View {
+            var body: some View {
+                // VUA:BEGIN-INJECTION
+                Text("Old")
+                // VUA:END-INJECTION
+            }
+        }
+        """
+        let routesSource = """
+        import SwiftUI
+
+        let routes = [
+            // VUA:BEGIN-ROUTES
+            Route("home", HomeScreen())
+            // VUA:END-ROUTES
+        ]
+        """
+        try routeHostSource.write(to: routeHost, atomically: true, encoding: .utf8)
+        try routesSource.write(to: routesFile, atomically: true, encoding: .utf8)
+        let routeRegistration = "    Route(\"new\", NewScreen())"
+        let routePreview = TargetAppInjection.preview(.init(
+            repoRoot: injectDir, targetFile: "RouteHost.swift", generatedSource: "Text(\"Route Screen\")",
+            expectedHash: SourceSafety.hash(of: routeHostSource), allowDirtyRepo: true,
+            routeFile: "Routes.swift", routeRegistration: routeRegistration, allowRouteInsertion: true))
+        c.check("p63 route insertion preview",
+                !routePreview.hasBlocker &&
+                routePreview.routeInserted &&
+                routePreview.previewDiff.contains("Text(\"Route Screen\")") &&
+                routePreview.routePreviewDiff.contains("Route(\"new\", NewScreen())"))
+        c.check("p63 route rollback plan",
+                routePreview.rollbackPlan.contains { $0.contains("git restore -- RouteHost.swift") } &&
+                routePreview.rollbackPlan.contains { $0.contains("git restore -- Routes.swift") })
+        let routeBlocked = TargetAppInjection.preview(.init(
+            repoRoot: injectDir, targetFile: "RouteHost.swift", generatedSource: "Text(\"Route Screen\")",
+            expectedHash: SourceSafety.hash(of: routeHostSource), allowDirtyRepo: true,
+            routeFile: "Routes.swift", routeRegistration: routeRegistration))
+        c.check("p63 route insertion requires opt-in",
+                routeBlocked.hasBlocker &&
+                routeBlocked.diagnostics.contains { $0.code == .routeInsertionBlocked })
+        let routeApplied = TargetAppInjection.apply(.init(
+            repoRoot: injectDir, targetFile: "RouteHost.swift", generatedSource: "Text(\"Route Screen\")",
+            expectedHash: SourceSafety.hash(of: routeHostSource), allowDirtyRepo: true,
+            routeFile: "Routes.swift", routeRegistration: routeRegistration, allowRouteInsertion: true))
+        let routeHostAfter = (try? String(contentsOf: routeHost, encoding: .utf8)) ?? ""
+        let routesAfter = (try? String(contentsOf: routesFile, encoding: .utf8)) ?? ""
+        c.check("p63 route insertion apply",
+                routeApplied.wroteFile &&
+                routeApplied.routeInserted &&
+                routeHostAfter.contains("Text(\"Route Screen\")") &&
+                routesAfter.contains("Route(\"new\", NewScreen())"))
+
         // Phase 30 — existing app view graph.
         let graphDir = fm.temporaryDirectory.appendingPathComponent("vua-p30-\(UUID().uuidString)")
         try fm.createDirectory(at: graphDir.appendingPathComponent("Sources/App"), withIntermediateDirectories: true)
