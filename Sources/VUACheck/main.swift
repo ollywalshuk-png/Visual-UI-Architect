@@ -2015,6 +2015,110 @@ func runChecks() async {
         c.check("p20 codegen emits midi comment", src.contains("// MIDI CC: 74"))
     }
 
+    // MARK: Phase 52 — Build/Test mode and interaction preview engine
+    do {
+        var previewState = InteractionPreviewState()
+        c.check("p52 build mode allows layout editing",
+                previewState.mode == .build && !previewState.isLayoutLocked)
+        previewState.switchMode(.test)
+        c.check("p52 test mode locks layout editing",
+                previewState.mode == .test && previewState.isLayoutLocked)
+
+        let testKnob = Layer(name: "Cutoff", kind: .knob,
+                             frame: VRect(x: 0, y: 0, width: 64, height: 64),
+                             control: ControlMetadata(parameterID: "cutoff", minValue: 0, maxValue: 100,
+                                                      defaultValue: 50, unit: .percent,
+                                                      behaviourType: ControlBehaviourType.rotaryKnob.rawValue,
+                                                      interactionMode: ControlInteractionMode.verticalDragRotary.rawValue,
+                                                      bindingName: "viewModel.cutoff",
+                                                      rotationStartDegrees: -135, rotationEndDegrees: 135))
+        c.check("p52 knob default preview",
+                InteractionPreviewEngine.previewResult(for: testKnob, state: previewState)?.value == 50)
+        let clampedKnob = InteractionPreviewEngine.dragValue(for: testKnob, startingValue: 50,
+                                                             translation: VPoint(x: 0, y: -1_000))
+        c.check("p52 knob drag clamps", clampedKnob == 100)
+        c.check("p52 knob rotation clamp",
+                InteractionPreviewEngine.rotationDegrees(for: 100, profile: ControlBehaviourResolver.profile(for: testKnob)!) == 135)
+
+        let bipolarKnob = Layer(name: "Pan", kind: .knob,
+                                control: ControlMetadata(parameterID: "pan", minValue: -100, maxValue: 100,
+                                                         defaultValue: 0, unit: .percent,
+                                                         behaviourType: ControlBehaviourType.bipolarKnob.rawValue))
+        c.check("p52 bipolar preview centre",
+                InteractionPreviewEngine.previewResult(for: bipolarKnob, state: previewState)?.normalizedValue == 0.5)
+
+        let steppedKnob = Layer(name: "Mode", kind: .knob,
+                                control: ControlMetadata(parameterID: "mode", minValue: 0, maxValue: 3,
+                                                         defaultValue: 1, isContinuous: false, stepCount: 4,
+                                                         behaviourType: ControlBehaviourType.steppedKnob.rawValue))
+        let steppedPreview = InteractionPreviewEngine.dragValue(for: steppedKnob, startingValue: 1,
+                                                                translation: VPoint(x: 0, y: -50)) ?? -1
+        c.check("p52 stepped knob snaps", steppedPreview.rounded() == steppedPreview)
+
+        let testSlider = Layer(name: "Mix", kind: .slider,
+                               frame: VRect(x: 0, y: 0, width: 200, height: 28),
+                               control: ControlMetadata(parameterID: "mix", minValue: 0, maxValue: 100,
+                                                        defaultValue: 50, unit: .percent,
+                                                        behaviourType: ControlBehaviourType.horizontalSlider.rawValue))
+        c.check("p52 slider drag maps to value",
+                InteractionPreviewEngine.linearValue(for: testSlider, localPoint: VPoint(x: 150, y: 14)) == 75)
+
+        let testFader = Layer(name: "Level", kind: .fader,
+                              frame: VRect(x: 0, y: 0, width: 40, height: 180),
+                              control: ControlMetadata(parameterID: "level", minValue: -60, maxValue: 6,
+                                                       defaultValue: 0, unit: .decibels,
+                                                       behaviourType: ControlBehaviourType.verticalFader.rawValue))
+        c.check("p52 fader drag maps to value",
+                InteractionPreviewEngine.linearValue(for: testFader, localPoint: VPoint(x: 20, y: 0)) == 6)
+
+        let testButton = Layer(name: "Fire", kind: .button,
+                               control: ControlMetadata(parameterID: "fire", minValue: 0, maxValue: 1,
+                                                        defaultValue: 0, isContinuous: false, stepCount: 2,
+                                                        behaviourType: ControlBehaviourType.buttonPress.rawValue))
+        c.check("p52 button press state",
+                InteractionPreviewEngine.pressedValue(for: testButton, isPressed: true) == 1 &&
+                InteractionPreviewEngine.pressedValue(for: testButton, isPressed: false) == 0)
+
+        let testToggle = Layer(name: "Bypass", kind: .toggle,
+                               control: ControlMetadata(parameterID: "bypass", minValue: 0, maxValue: 1,
+                                                        defaultValue: 0, isContinuous: false, stepCount: 2,
+                                                        behaviourType: ControlBehaviourType.toggleSwitch.rawValue))
+        c.check("p52 toggle state", InteractionPreviewEngine.toggledValue(for: testToggle, currentValue: 0) == 1)
+
+        let testMeter = Layer(name: "Output", kind: .meter,
+                              control: ControlMetadata(parameterID: "out", minValue: -60, maxValue: 0,
+                                                       defaultValue: -18, unit: .decibels,
+                                                       behaviourType: ControlBehaviourType.meterReadout.rawValue,
+                                                       interactionMode: ControlInteractionMode.readOnly.rawValue))
+        let meterDemo = InteractionPreviewEngine.demoMeterValue(for: testMeter, time: 1.2) ?? -999
+        c.check("p52 meter demo value generation", meterDemo >= -60 && meterDemo <= 0)
+        c.check("p52 display formatting",
+                InteractionPreviewEngine.displayString(-18, profile: ControlBehaviourResolver.profile(for: testMeter)!) == "-18.0 dB")
+
+        var valueState = previewState
+        InteractionPreviewEngine.setValue(75, for: testKnob, in: &valueState)
+        c.check("p52 preview value separate from document default",
+                valueState.values[testKnob.id] == 75 && testKnob.control?.defaultValue == 50)
+
+        let invalid = Layer(name: "Bad", kind: .slider,
+                            frame: VRect(x: 0, y: 0, width: 20, height: 120),
+                            control: ControlMetadata(parameterID: "", minValue: 10, maxValue: 1,
+                                                     defaultValue: 20,
+                                                     behaviourType: ControlBehaviourType.horizontalSlider.rawValue,
+                                                     automationEnabled: true))
+        let invalidCodes = Set(ControlBehaviourDiagnostics.validatePreview(invalid).map(\.code))
+        c.check("p52 invalid min max diagnostic", invalidCodes.contains(.invalidRange))
+        c.check("p52 missing binding diagnostic", invalidCodes.contains(.missingBinding))
+        c.check("p52 geometry mismatch diagnostic", invalidCodes.contains(.geometryMismatch))
+
+        let generated = (try? CodeGenService().generate(Document(name: "P52", roots: [testKnob])).contents) ?? ""
+        c.check("p52 generated SwiftUI emits state binding",
+                generated.contains("@State private var vua_viewModel_cutoff_") &&
+                generated.contains("KnobView(value: $vua_viewModel_cutoff_"))
+        c.check("p52 generated SwiftUI keeps binding provenance",
+                generated.contains("// Binding target: viewModel.cutoff"))
+    }
+
     // MARK: Phase 21 — Refined line tool
     do {
         let straight = Layer(name: "Line", kind: .line,
