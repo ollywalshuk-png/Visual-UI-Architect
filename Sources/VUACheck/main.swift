@@ -1338,6 +1338,39 @@ func runChecks() async {
         let decodedVariantDoc = try JSONDecoder().decode(Document.self, from: variantJSON)
         c.check("p27 component variants round-trip", decodedVariantDoc.components.first?.variants.count == 4)
 
+        let p49Button = Layer(name: "Button", kind: .button,
+                              frame: VRect(x: 0, y: 0, width: 120, height: 44),
+                              style: LayerStyle(backgroundColor: VColor(hex: "#3478F6"),
+                                                foregroundColor: .white,
+                                                cornerRadius: 8),
+                              text: "Save")
+        var standardButtonComponent = Component(name: "Button", master: Layer(name: "Button", kind: .group,
+                                                                              frame: VRect(x: 0, y: 0, width: 120, height: 44),
+                                                                              children: [p49Button]))
+        standardButtonComponent.variants = ComponentEngine.standardButtonVariants(for: standardButtonComponent)
+        c.check("p49 standard button variants",
+                standardButtonComponent.variants.map(\.name) == ["Primary", "Secondary", "Danger", "Glass", "Disabled"])
+        let glass = standardButtonComponent.variants.first { $0.name == "Glass" }!
+        var glassInstance = ComponentEngine.makeInstance(of: standardButtonComponent, variantID: glass.id, at: VPoint(x: 12, y: 20))
+        glassInstance.componentOverrides = [
+            ComponentOverride(property: "text", valueDescription: "Launch"),
+            ComponentOverride(property: "opacity", valueDescription: "0.72")
+        ]
+        let resolved = ComponentEngine.resolveInstance(glassInstance, component: standardButtonComponent)
+        c.check("p49 resolves inherited variant overrides",
+                resolved?.variantName == "Glass" &&
+                resolved?.resolvedRoot.frame.origin == VPoint(x: 12, y: 20) &&
+                resolved?.appliedOverrides.map(\.property) == ["text", "opacity"] &&
+                resolved?.resolvedRoot.flattened().contains { $0.kind == .button && $0.text == "Launch" && abs($0.style.opacity - 0.72) < 0.001 } == true)
+        glassInstance.lockedComponentProperties = ["opacity"]
+        let lockedResolved = ComponentEngine.resolveInstance(glassInstance, component: standardButtonComponent)
+        c.check("p49 locked override skipped",
+                lockedResolved?.appliedOverrides.map(\.property) == ["text"])
+        let p49Source = (try? CodeGenService().generate(Document(name: "P49", roots: [glassInstance], components: [standardButtonComponent])).contents) ?? ""
+        c.check("p49 codegen carries override dictionary",
+                p49Source.contains("var overrides: [String: String] = [:]") &&
+                p49Source.contains("overrides: [\"text\": \"Launch\", \"opacity\": \"0.72\"]"))
+
         // Phase 28 — design token system.
         let primaryToken = DesignToken(name: "Primary Color", kind: .color,
                                        value: .color(VColor(red: 0.2, green: 0.4, blue: 0.9, alpha: 1)))
