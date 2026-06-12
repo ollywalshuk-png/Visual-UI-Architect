@@ -10,15 +10,18 @@ public enum TargetAppInjection {
         public var expectedHash: String?
         public var allowDirtyRepo: Bool
         public var runBuild: Bool
+        public var allowFullFileReplacement: Bool
 
         public init(repoRoot: URL, targetFile: String, generatedSource: String,
-                    expectedHash: String? = nil, allowDirtyRepo: Bool = false, runBuild: Bool = false) {
+                    expectedHash: String? = nil, allowDirtyRepo: Bool = false, runBuild: Bool = false,
+                    allowFullFileReplacement: Bool = false) {
             self.repoRoot = repoRoot
             self.targetFile = targetFile
             self.generatedSource = generatedSource
             self.expectedHash = expectedHash
             self.allowDirtyRepo = allowDirtyRepo
             self.runBuild = runBuild
+            self.allowFullFileReplacement = allowFullFileReplacement
         }
     }
 
@@ -46,7 +49,8 @@ public enum TargetAppInjection {
     public struct Diagnostic: Hashable, Sendable, Identifiable {
         public enum Severity: String, Sendable { case info, warning, blocker }
         public enum Code: String, Sendable {
-            case targetMissing, dirtyRepository, hashMismatch, sourcePreflight, buildFailed, noInjectionMarker
+            case targetMissing, targetOutsideRepository, unsupportedTarget, dirtyRepository, hashMismatch
+            case sourcePreflight, buildFailed, noInjectionMarker, fullFileReplacementBlocked
         }
         public let id = UUID()
         public var severity: Severity
@@ -63,16 +67,37 @@ public enum TargetAppInjection {
     }
 
     private static func run(_ request: Request, write: Bool) -> Result {
-        let targetURL = request.targetFile.hasPrefix("/")
-            ? URL(fileURLWithPath: request.targetFile)
-            : request.repoRoot.appendingPathComponent(request.targetFile)
+        let resolvedTarget = resolveTarget(repoRoot: request.repoRoot, targetFile: request.targetFile)
+        let targetURL = resolvedTarget.url
+        let diffPath = resolvedTarget.relativePath
         var diagnostics: [Diagnostic] = []
         var original = ""
-        if let text = try? String(contentsOf: targetURL, encoding: .utf8) {
-            original = text
-        } else {
-            diagnostics.append(.init(severity: .blocker, code: .targetMissing,
-                                     message: "Target file is missing or unreadable: \(targetURL.path)"))
+
+        if !resolvedTarget.isInsideRepository {
+            diagnostics.append(.init(
+                severity: .blocker, code: .targetOutsideRepository,
+                message: "Target file must stay inside the selected repository: \(request.targetFile)"))
+        }
+        if !request.targetFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           targetURL.pathExtension.lowercased() != "swift" {
+            diagnostics.append(.init(
+                severity: .blocker, code: .unsupportedTarget,
+                message: "Target injection only supports Swift source files."))
+        }
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: targetURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            diagnostics.append(.init(
+                severity: .blocker, code: .unsupportedTarget,
+                message: "Target injection cannot write into a directory."))
+        }
+
+        if diagnostics.allSatisfy({ $0.code != .targetOutsideRepository && $0.code != .unsupportedTarget }) {
+            if let text = try? String(contentsOf: targetURL, encoding: .utf8) {
+                original = text
+            } else {
+                diagnostics.append(.init(severity: .blocker, code: .targetMissing,
+                                         message: "Target file is missing or unreadable: \(targetURL.path)"))
+            }
         }
 
         let repo = GitRepository(repositoryURL: request.repoRoot)
@@ -99,11 +124,16 @@ public enum TargetAppInjection {
         let hasMarkers = original.contains("// VUA:BEGIN-INJECTION") && original.contains("// VUA:END-INJECTION")
         let injected = replaceInjectionRegion(in: original, with: request.generatedSource)
         if !original.isEmpty, injected == original, !hasMarkers {
-            diagnostics.append(.init(severity: .warning, code: .noInjectionMarker,
-                                     message: "No VUA injection markers found; generated source will replace the full target file."))
+            if request.allowFullFileReplacement {
+                diagnostics.append(.init(severity: .warning, code: .noInjectionMarker,
+                                         message: "No VUA injection markers found; generated source will replace the full target file."))
+            } else {
+                diagnostics.append(.init(severity: .blocker, code: .fullFileReplacementBlocked,
+                                         message: "No VUA injection markers found; enable full-file replacement before writing."))
+            }
         }
         let finalSource = hasMarkers ? injected : request.generatedSource
-        let previewDiff = unifiedDiff(old: original, new: finalSource, filePath: request.targetFile)
+        let previewDiff = unifiedDiff(old: original, new: finalSource, filePath: diffPath)
         let changedLineCount = previewDiff.split(separator: "\n").filter {
             ($0.hasPrefix("+") && !$0.hasPrefix("+++")) || ($0.hasPrefix("-") && !$0.hasPrefix("---"))
         }.count
@@ -111,6 +141,7 @@ public enum TargetAppInjection {
         var buildRan = false
         var buildPassed = true
         var buildOutput = ""
+        var didWriteFile = false
 
         if write && diagnostics.allSatisfy({ $0.severity != .blocker }) {
             do { try preserveLineEndings(from: original, in: finalSource).write(to: targetURL, atomically: true, encoding: .utf8) }
@@ -118,6 +149,7 @@ public enum TargetAppInjection {
                 diagnostics.append(.init(severity: .blocker, code: .targetMissing,
                                          message: "Could not write target file: \(error)"))
             }
+            didWriteFile = diagnostics.allSatisfy { $0.severity != .blocker }
             if request.runBuild {
                 buildRan = true
                 let result = swiftBuild(in: request.repoRoot)
@@ -130,14 +162,44 @@ public enum TargetAppInjection {
             }
         }
 
-        let gitDiff = repo.isGitRepository() ? ((try? repo.diff(path: request.targetFile)) ?? "") : ""
+        let gitDiff = repo.isGitRepository() && resolvedTarget.isInsideRepository ? ((try? repo.diff(path: diffPath)) ?? "") : ""
         return Result(targetURL: targetURL, previewDiff: previewDiff, gitDiff: gitDiff,
                       assetDependencies: assets, diagnostics: diagnostics,
                       buildRan: buildRan, buildPassed: buildPassed, buildOutput: buildOutput,
-                      rollbackPlan: rollbackPlan(for: request.targetFile, repoRoot: request.repoRoot),
-                      wroteFile: write && diagnostics.allSatisfy { $0.severity != .blocker },
+                      rollbackPlan: rollbackPlan(for: diffPath, repoRoot: request.repoRoot),
+                      wroteFile: didWriteFile,
                       replacementMode: hasMarkers ? .markerRegion : .fullFile,
                       changedLineCount: changedLineCount)
+    }
+
+    private struct ResolvedTarget {
+        var url: URL
+        var relativePath: String
+        var isInsideRepository: Bool
+    }
+
+    private static func resolveTarget(repoRoot: URL, targetFile: String) -> ResolvedTarget {
+        let root = repoRoot.standardizedFileURL.resolvingSymlinksInPath()
+        let trimmed = targetFile.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate = trimmed.hasPrefix("/")
+            ? URL(fileURLWithPath: trimmed)
+            : root.appendingPathComponent(trimmed)
+        let resolved = candidate.standardizedFileURL.resolvingSymlinksInPath()
+        let rootPath = root.path
+        let targetPath = resolved.path
+        let inside = targetPath == rootPath || targetPath.hasPrefix(rootPath + "/")
+        let relative = inside ? relativePath(from: root, to: resolved) : targetFile
+        return ResolvedTarget(url: resolved, relativePath: relative.isEmpty ? "." : relative, isInsideRepository: inside)
+    }
+
+    private static func relativePath(from root: URL, to target: URL) -> String {
+        let rootComponents = root.standardizedFileURL.pathComponents
+        let targetComponents = target.standardizedFileURL.pathComponents
+        guard targetComponents.count >= rootComponents.count,
+              Array(targetComponents.prefix(rootComponents.count)) == rootComponents else {
+            return target.path
+        }
+        return targetComponents.dropFirst(rootComponents.count).joined(separator: "/")
     }
 
     private static func replaceInjectionRegion(in source: String, with generated: String) -> String {
@@ -179,8 +241,16 @@ public enum TargetAppInjection {
 
     private static func rollbackPlan(for targetFile: String, repoRoot: URL) -> [String] {
         let repo = GitRepository(repositoryURL: repoRoot)
-        if repo.isGitRepository() { return ["git restore \(targetFile)", "git diff -- \(targetFile)"] }
+        let quoted = shellQuoted(targetFile)
+        if repo.isGitRepository() { return ["git restore -- \(quoted)", "git diff -- \(quoted)"] }
         return ["Restore \(targetFile) from your last backup or source-control checkpoint."]
+    }
+
+    private static func shellQuoted(_ value: String) -> String {
+        if value.range(of: #"^[A-Za-z0-9_./-]+$"#, options: .regularExpression) != nil {
+            return value
+        }
+        return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     private static func swiftBuild(in root: URL) -> (ok: Bool, output: String) {
