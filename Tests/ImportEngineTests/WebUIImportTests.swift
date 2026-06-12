@@ -86,6 +86,44 @@ final class WebUIImportTests: XCTestCase {
         XCTAssertTrue(layers.contains { $0.binding?.anchorID == "level" && $0.kind == .slider })
     }
 
+    func testReactNativeStaticScreenImportsEditableLayers() throws {
+        let root = try makeProject()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try #"{"dependencies":{"react-native":"latest","react":"latest"}}"#
+            .write(to: root.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
+        try #"""
+        export default function MobileMixer() {
+          return (
+            <View nativeID="mixerRoot" style={{ width: 390, height: 220, backgroundColor: '#111827' }}>
+              <Text testID="title" style={{ fontSize: 24, color: '#f8fafc' }}>Mobile Mix</Text>
+              <Pressable nativeID="playButton" style={{ width: 132, height: 44, borderRadius: 12 }}>
+                <Text>Play</Text>
+              </Pressable>
+              <Slider nativeID="gain" style={[styles.slider, { width: 240, height: 36 }]} />
+              <Switch testID="bypass" accessibilityLabel="Bypass" />
+            </View>
+          );
+        }
+        """#.write(to: root.appendingPathComponent("MobileMixer.tsx"), atomically: true, encoding: .utf8)
+
+        let summary = ImportFrameworkDetector().detect(root: root)
+        XCTAssertEqual(summary.framework, .reactNative)
+        XCTAssertEqual(summary.implementationState, .implemented)
+        XCTAssertEqual(summary.rating, .yellow)
+
+        let candidate = try XCTUnwrap(summary.candidates.first)
+        XCTAssertEqual(candidate.viewName, "MobileMixer")
+        XCTAssertTrue(candidate.hasAnchors)
+
+        let imported = try XCTUnwrap(ImportCoordinator().importCandidate(candidate))
+        let layers = imported.view.roots.flatMap { $0.flattened() }
+        XCTAssertTrue(layers.contains { $0.binding?.anchorID == "mixerRoot" && $0.kind.isGroupLike && $0.frame.width == 390 })
+        XCTAssertTrue(layers.contains { $0.binding?.anchorID == "title" && $0.kind == .label && $0.text == "Mobile Mix" })
+        XCTAssertTrue(layers.contains { $0.binding?.anchorID == "playButton" && $0.kind == .button && $0.frame.height == 44 })
+        XCTAssertTrue(layers.contains { $0.binding?.anchorID == "gain" && $0.kind == .slider && $0.frame.width == 240 })
+        XCTAssertTrue(layers.contains { $0.binding?.anchorID == "bypass" && $0.kind == .toggle })
+    }
+
     private func makeProject() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("vua-web-import-\(UUID().uuidString)")
