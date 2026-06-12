@@ -215,7 +215,7 @@ struct ImportWizardView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Import").font(.title2.bold())
             if canImport {
-                Label("Ready to import the selected SwiftUI screen into editable canvas layers.",
+                Label("Ready to import the selected screen into editable canvas layers.",
                       systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else if let summary {

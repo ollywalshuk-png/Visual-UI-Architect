@@ -37,10 +37,8 @@ public struct ImportFrameworkDetector: Sendable {
             framework = .unknown
         }
 
-        let candidates = framework == .swiftUI ? ExistingUIImport.scanRepository(root) : []
-        let state: ImplementationState = framework == .swiftUI ? .implemented
-            : framework == .unknown ? .unsupported
-            : [.react, .electron, .htmlCSS].contains(framework) ? .foundationOnly : .comingSoon
+        let candidates = candidates(for: framework, root: root)
+        let state = implementationState(for: framework, candidates: candidates)
         let warnings = warnings(for: framework, candidates: candidates, state: state)
         return ImportProjectSummary(
             rootPath: root.path,
@@ -49,9 +47,41 @@ public struct ImportFrameworkDetector: Sendable {
             rating: rating(for: framework, candidates: candidates, state: state),
             fileCount: files.count,
             screenCount: candidates.filter { !$0.isPreviewOnly }.count,
-            componentCount: files.filter { $0.role == .swiftUIView }.flatMap(\.viewNames).count,
+            componentCount: componentCount(for: framework, files: files, candidates: candidates),
             warnings: warnings,
             candidates: candidates)
+    }
+
+    private func candidates(for framework: ImportFramework, root: URL) -> [ExistingUIImport.Candidate] {
+        switch framework {
+        case .swiftUI:
+            return ExistingUIImport.scanRepository(root)
+        case .react, .electron, .htmlCSS:
+            return WebUIImport.scanRepository(root, framework: framework)
+        case .uiKit, .appKit, .reactNative, .flutter, .unknown:
+            return []
+        }
+    }
+
+    private func implementationState(for framework: ImportFramework,
+                                     candidates: [ExistingUIImport.Candidate]) -> ImplementationState {
+        if framework == .unknown { return .unsupported }
+        if framework == .swiftUI { return .implemented }
+        if [.react, .electron, .htmlCSS].contains(framework) {
+            return candidates.isEmpty ? .foundationOnly : .implemented
+        }
+        return .comingSoon
+    }
+
+    private func componentCount(for framework: ImportFramework, files: [RepositoryFile],
+                                candidates: [ExistingUIImport.Candidate]) -> Int {
+        if framework == .swiftUI {
+            return files.filter { $0.role == .swiftUIView }.flatMap(\.viewNames).count
+        }
+        if [.react, .electron, .htmlCSS].contains(framework) {
+            return candidates.reduce(0) { $0 + $1.supportedElementCount }
+        }
+        return 0
     }
 
     private func containsWebFiles(root: URL) -> Bool {
@@ -65,6 +95,7 @@ public struct ImportFrameworkDetector: Sendable {
 
     private func rating(for framework: ImportFramework, candidates: [ExistingUIImport.Candidate], state: ImplementationState) -> ImportCompatibilityRating {
         if framework == .swiftUI, !candidates.isEmpty { return .green }
+        if [.react, .electron, .htmlCSS].contains(framework), state == .implemented, !candidates.isEmpty { return .yellow }
         if state == .foundationOnly { return .yellow }
         return .red
     }
@@ -75,6 +106,9 @@ public struct ImportFrameworkDetector: Sendable {
         }
         if state == .foundationOnly {
             return ["\(framework.displayName) detection is available; layer import adapter is foundation-only in this build."]
+        }
+        if [.react, .electron, .htmlCSS].contains(framework), state == .implemented {
+            return ["\(framework.displayName) static layer import is available for discovered DOM/JSX screens. Scripts, CSS cascade, and runtime state remain source-owned."]
         }
         if state == .comingSoon {
             return ["\(framework.displayName) import is registered as coming soon."]

@@ -9,6 +9,12 @@ public struct ParsedView: Sendable {
     public var roots: [Layer]
     /// File the view was parsed from (repository-relative or absolute path).
     public var filePath: String
+
+    public init(typeName: String, roots: [Layer], filePath: String) {
+        self.typeName = typeName
+        self.roots = roots
+        self.filePath = filePath
+    }
 }
 
 /// Parses SwiftUI source into the layer model using SwiftSyntax (no regex).

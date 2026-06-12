@@ -1,4 +1,5 @@
 import Foundation
+import ImportEngine
 import VUACore
 import RepositoryEngine
 
@@ -28,7 +29,7 @@ extension DocumentStore {
     /// Returns true on success.
     @discardableResult
     func importExistingUI(_ candidate: ExistingUIImport.Candidate) -> Bool {
-        guard let imported = ExistingUIImport.importCandidateEnsuringAnchors(candidate) else {
+        guard let imported = ImportCoordinator().importCandidate(candidate) else {
             repositoryStatus = "Import failed: couldn't parse \(candidate.viewName)."
             return false
         }
@@ -54,8 +55,12 @@ extension DocumentStore {
         }
         repositoryFiles = scanRepositoryFiles()
 
+        let isWebImport = imported.view.roots.flatMap { $0.flattened() }
+            .contains { $0.tags.contains("import:web") }
         if imported.anchorsInjected {
             repositoryStatus = "Imported \(imported.view.typeName) from \(url.lastPathComponent) and added source anchors for safe apply."
+        } else if isWebImport {
+            repositoryStatus = "Imported \(imported.view.typeName) from \(url.lastPathComponent) as editable web layers. Apply to Source is disabled for web imports in this build."
         } else if !imported.hasAnchors {
             repositoryStatus = "Imported \(imported.view.typeName) as editable temporary layers. No anchors found, so Apply to Source is disabled until source anchors exist."
         } else {
