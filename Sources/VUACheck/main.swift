@@ -2013,6 +2013,23 @@ func runChecks() async {
         c.check("p20 codegen emits behaviour comment", src.contains("// Behaviour: Rotary Knob"))
         c.check("p20 codegen emits binding TODO/comment", src.contains("// Binding target: synth.cutoff"))
         c.check("p20 codegen emits midi comment", src.contains("// MIDI CC: 74"))
+
+        let bindingPlan = BehaviourBindingPlanner.plan(for: Document(name: "Synth Panel", roots: [knobLayer, slider, button, toggle, meter]))
+        c.check("p48 binding planner value/action/toggle/readout",
+                bindingPlan.bindings.contains { $0.layerName == "Cutoff" && $0.kind == .value && $0.propertyName == "synthCutoff" } &&
+                bindingPlan.bindings.contains { $0.layerName == "Mix" && $0.kind == .value } &&
+                bindingPlan.bindings.contains { $0.layerName == "Trigger" && $0.kind == .action && $0.actionName == "triggerAction" } &&
+                bindingPlan.bindings.contains { $0.layerName == "Bypass" && $0.kind == .toggle && $0.valueType == .bool } &&
+                bindingPlan.bindings.contains { $0.layerName == "Output" && $0.kind == .readOnly })
+        c.check("p48 binding planner midi au maps",
+                bindingPlan.midiBindings.contains { $0.parameterID == "cutoff" && $0.midiCC == 74 } &&
+                bindingPlan.auParameterBindings.contains { $0.parameterID == "cutoff" && $0.auParameterID == "filter.cutoff" })
+        let modelSource = BehaviourViewModelGenerator.generateSwiftObservableObject(plan: bindingPlan)
+        c.check("p48 viewmodel source emits state and actions",
+                modelSource.contains("final class SynthPanelViewModel: ObservableObject") &&
+                modelSource.contains("@Published var synthCutoff: Double = 1000") &&
+                modelSource.contains("func triggerAction()") &&
+                modelSource.contains("\"cutoff\": 74"))
     }
 
     // MARK: Phase 21 — Refined line tool
