@@ -9,6 +9,7 @@ import AIEngine
 import RepositoryEngine
 import WorkspaceEngine
 import BuildIntelligenceEngine
+import ControlBehaviourEngine
 
 /// The single observable source of truth for the editor (MVVM view model).
 /// Holds the document, selection, undo/redo history, and derived state.
@@ -18,6 +19,8 @@ final class DocumentStore: ObservableObject {
     @Published var selection: Set<UUID> = []
     @Published private(set) var validation: ValidationReport = ValidationReport(issues: [])
     @Published var snapGuides: [Snapping.Guide] = []
+    @Published var editorMode: EditorInteractionMode = .build
+    @Published var previewState = InteractionPreviewState()
 
     // Repository round-trip state (see DocumentStore+Repository.swift).
     @Published var repositoryRoot: URL?
@@ -61,9 +64,19 @@ final class DocumentStore: ObservableObject {
     @Published var verticalGuides: [Double] = []     // x positions
     @Published var horizontalGuides: [Double] = []   // y positions
 
-    func addVerticalGuide(_ x: Double) { verticalGuides.append(x) }
-    func addHorizontalGuide(_ y: Double) { horizontalGuides.append(y) }
-    func clearGuides() { verticalGuides = []; horizontalGuides = [] }
+    func addVerticalGuide(_ x: Double) {
+        guard canEditDocument else { return }
+        verticalGuides.append(x)
+    }
+    func addHorizontalGuide(_ y: Double) {
+        guard canEditDocument else { return }
+        horizontalGuides.append(y)
+    }
+    func clearGuides() {
+        guard canEditDocument else { return }
+        verticalGuides = []
+        horizontalGuides = []
+    }
 
     // Undo/redo via document snapshots. Simple, correct, and storage-cheap for
     // documents up to many thousands of layers.
@@ -89,11 +102,76 @@ final class DocumentStore: ObservableObject {
     }
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
+    var isTestMode: Bool { editorMode == .test }
+    var canEditDocument: Bool { editorMode.allowsLayoutEditing }
+
+    // MARK: - Build/Test mode
+
+    func switchEditorMode(_ mode: EditorInteractionMode) {
+        guard editorMode != mode else { return }
+        if isInteracting { endInteraction() }
+        editorMode = mode
+        previewState.switchMode(mode)
+        snapGuides = []
+        if mode == .test {
+            repositoryStatus = "Test Mode: layout is locked; controls are interactive."
+        } else {
+            previewState.activeLayerID = nil
+            repositoryStatus = "Build Mode: layout and styling edits enabled."
+        }
+    }
+
+    func toggleEditorMode() {
+        switchEditorMode(editorMode == .build ? .test : .build)
+    }
+
+    func exitActivePreviewInteraction() {
+        previewState.activeLayerID = nil
+    }
+
+    func resetPreviewValues() {
+        previewState.resetAll()
+        repositoryStatus = "Reset Test Mode preview values."
+    }
+
+    func previewResult(for layer: Layer) -> InteractionPreviewResult? {
+        InteractionPreviewEngine.previewResult(for: layer, state: previewState)
+    }
+
+    func setPreviewValue(_ value: Double, for layer: Layer) {
+        InteractionPreviewEngine.setValue(value, for: layer, in: &previewState)
+        selection = [layer.id]
+    }
+
+    func resetPreviewValue(for layer: Layer) {
+        InteractionPreviewEngine.resetValue(for: layer, in: &previewState)
+    }
+
+    func applyPreviewValueToSelectedDefault() {
+        guard let id = selection.first,
+              let layer = document.layer(id: id),
+              var control = layer.control,
+              let value = previewState.values[id] else { return }
+        undoStack.append(document)
+        if undoStack.count > maxHistory { undoStack.removeFirst() }
+        redoStack.removeAll()
+        control.defaultValue = control.clamp(value)
+        var copy = document
+        LayerTree.update(id, in: &copy.roots) { $0.control = control }
+        document = copy
+        isDirty = true
+        revalidate()
+        repositoryStatus = "Applied Test Mode preview value to \(layer.name)."
+    }
 
     // MARK: - Mutation with history
 
     /// Applies a mutation, recording an undo checkpoint first.
     func mutate(_ action: (inout Document) -> Void) {
+        guard canEditDocument else {
+            repositoryStatus = "Switch to Build Mode to edit the document."
+            return
+        }
         undoStack.append(document)
         if undoStack.count > maxHistory { undoStack.removeFirst() }
         redoStack.removeAll()
@@ -107,6 +185,7 @@ final class DocumentStore: ObservableObject {
     /// A live mutation (e.g. during a drag) that should not create a new
     /// checkpoint each frame. Call `beginInteraction()` once before the drag.
     func mutateLive(_ action: (inout Document) -> Void) {
+        guard canEditDocument else { return }
         var copy = document
         action(&copy)
         document = copy
@@ -120,6 +199,7 @@ final class DocumentStore: ObservableObject {
     private(set) var isInteracting = false
 
     func beginInteractionIfNeeded() {
+        guard canEditDocument else { return }
         guard !isInteracting else { return }
         isInteracting = true
         interactionCheckpoint = document
@@ -144,6 +224,7 @@ final class DocumentStore: ObservableObject {
 
     /// Moves all selected layers by a canvas-space delta from their baseline.
     func moveSelected(byCanvasDelta delta: VPoint) {
+        guard canEditDocument else { return }
         mutateLive { doc in
             for (id, base) in baselineFrames {
                 LayerTree.update(id, in: &doc.roots) {
@@ -155,6 +236,7 @@ final class DocumentStore: ObservableObject {
 
     /// Resizes the primary selection by dragging `handle` from its baseline.
     func resizeSelected(handle: (VRect) -> VRect) {
+        guard canEditDocument else { return }
         guard let id = selection.first, let base = baselineFrames[id] else { return }
         mutateLive { doc in
             LayerTree.update(id, in: &doc.roots) { $0.frame = handle(base) }
@@ -165,6 +247,7 @@ final class DocumentStore: ObservableObject {
     func baselineFrame(_ id: UUID) -> VRect? { baselineFrames[id] }
 
     func undo() {
+        guard canEditDocument else { return }
         guard let prev = undoStack.popLast() else { return }
         redoStack.append(document)
         document = prev
@@ -173,6 +256,7 @@ final class DocumentStore: ObservableObject {
     }
 
     func redo() {
+        guard canEditDocument else { return }
         guard let next = redoStack.popLast() else { return }
         undoStack.append(document)
         document = next
@@ -189,6 +273,8 @@ final class DocumentStore: ObservableObject {
         verticalGuides = []
         horizontalGuides = []
         selection = []
+        editorMode = .build
+        previewState.resetAll()
         document = doc
         documentURL = url
         isDirty = false
@@ -388,6 +474,17 @@ final class DocumentStore: ObservableObject {
             return ControlMetadata(parameterID: "enabled", displayName: "Enabled",
                                    minValue: 0, maxValue: 1, defaultValue: 1, unit: .generic,
                                    isContinuous: false, stepCount: 2)
+        case .button:
+            return ControlMetadata(parameterID: "trigger", displayName: "Trigger",
+                                   minValue: 0, maxValue: 1, defaultValue: 0, unit: .generic,
+                                   isContinuous: false, stepCount: 2,
+                                   behaviourType: ControlBehaviourType.buttonPress.rawValue,
+                                   interactionMode: ControlInteractionMode.press.rawValue)
+        case .control:
+            return ControlMetadata(parameterID: "value", displayName: "Value",
+                                   minValue: 0, maxValue: 1, defaultValue: 0.5, unit: .generic,
+                                   behaviourType: ControlBehaviourType.horizontalSlider.rawValue,
+                                   interactionMode: ControlInteractionMode.linearDrag.rawValue)
         default:
             return nil
         }

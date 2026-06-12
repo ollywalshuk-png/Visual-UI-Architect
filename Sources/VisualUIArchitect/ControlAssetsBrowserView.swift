@@ -1,6 +1,7 @@
 import SwiftUI
 import VUACore
 import PresetEngine
+import ControlBehaviourEngine
 
 /// Browser for Phase 19 functional control assets. These complement the
 /// Phase 16 preset browser by surfacing role/function/behaviour metadata.
@@ -69,6 +70,12 @@ struct ControlAssetsBrowserView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(width: 96)
+            Text(statusBadge(for: asset))
+                .font(.system(size: 8, weight: .semibold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(statusColor(for: asset).opacity(0.18), in: Capsule())
+                .foregroundStyle(statusColor(for: asset))
         }
         .padding(4)
         .contentShape(Rectangle())
@@ -82,9 +89,34 @@ struct ControlAssetsBrowserView: View {
             asset.role.displayName,
             asset.function.rawValue,
             asset.behaviour.displayName,
+            statusBadge(for: asset),
             "range \(range)",
             asset.tags.joined(separator: ", ")
         ].joined(separator: " · ")
+    }
+
+    private func statusBadge(for asset: ControlAsset) -> String {
+        switch asset.category {
+        case .meter: return "Meter"
+        case .display: return "Display"
+        case .panel: return "Visual"
+        default:
+            let status = InteractionPreviewEngine.status(for: asset.makeLayer())
+            switch status {
+            case .functional, .partiallyFunctional: return "Interactive"
+            case .missingBehaviour: return "Missing Behaviour"
+            case .visualOnly: return "Visual"
+            }
+        }
+    }
+
+    private func statusColor(for asset: ControlAsset) -> Color {
+        switch statusBadge(for: asset) {
+        case "Interactive": return .green
+        case "Meter", "Display": return .cyan
+        case "Missing Behaviour": return .red
+        default: return .secondary
+        }
     }
 }
 

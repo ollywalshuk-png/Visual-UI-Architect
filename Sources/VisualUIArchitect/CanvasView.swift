@@ -3,6 +3,7 @@ import VUACore
 import LayerEngine
 import CanvasEngine
 import PreviewEngine
+import ControlBehaviourEngine
 
 /// The visual editing surface. Renders the document's render model and hosts
 /// selection, drag-to-move (with snapping), and resize-handle interactions.
@@ -12,6 +13,8 @@ struct CanvasView: View {
     @State private var zoom: CGFloat = 1.0
     @State private var lastZoom: CGFloat = 1.0
     @State private var viewportSize: CGSize = .zero
+    @State private var previewDragStart: [UUID: Double] = [:]
+    @State private var demoTime: Double = 0
 
     @AppStorage("vua.grid.enabled") private var gridEnabled = false
     @AppStorage("vua.grid.snap") private var snapToGrid = false
@@ -35,6 +38,9 @@ struct CanvasView: View {
         )
         .overlay(alignment: .top) { canvasToolbar.padding(8) }
         .overlay(alignment: .bottomTrailing) { zoomControls.padding(12) }
+        .onReceive(Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()) { date in
+            if store.isTestMode { demoTime = date.timeIntervalSinceReferenceDate }
+        }
         .gesture(MagnificationGesture()
             .onChanged { scale in zoom = CanvasViewport.clampZoom(Double(lastZoom * scale)) }
             .onEnded { _ in lastZoom = zoom })
@@ -60,7 +66,8 @@ struct CanvasView: View {
                 guideView(guide, canvasSize: model.canvasSize)
             }
 
-            if let layer = store.canSelectSingle,
+            if !store.isTestMode,
+               let layer = store.canSelectSingle,
                let frame = LayerTree.absoluteFrame(of: layer.id, in: store.document.roots) {
                 SelectionOverlay(frame: frame, zoom: zoom)
                     .environmentObject(store)
@@ -68,6 +75,7 @@ struct CanvasView: View {
         }
         // Attached before scaleEffect so `location` is in canvas coordinates.
         .dropDestination(for: String.self) { items, location in
+            guard store.canEditDocument else { return false }
             guard let idString = items.first, let assetID = UUID(uuidString: idString) else { return false }
             store.dropAsset(assetID, at: VPoint(x: Double(location.x), y: Double(location.y)))
             return true
@@ -75,7 +83,10 @@ struct CanvasView: View {
         .scaleEffect(zoom, anchor: .topLeading)
         .padding(40)
         .contentShape(Rectangle())
-        .onTapGesture { store.selection = [] }
+        .onTapGesture {
+            if store.isTestMode { store.exitActivePreviewInteraction() }
+            else { store.selection = [] }
+        }
     }
 
     // MARK: - Grid & guides
@@ -139,6 +150,7 @@ struct CanvasView: View {
             }
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .allowsHitTesting(store.canEditDocument)
     }
 
     private var canvasToolbar: some View {
@@ -154,10 +166,12 @@ struct CanvasView: View {
                 .help("Show guides")
             Button { store.addVerticalGuide(store.document.canvasSize.width / 2) } label: { Image(systemName: "arrow.up.and.down.righttriangle.up.righttriangle.down") }
                 .help("Add vertical guide")
+                .disabled(!store.canEditDocument)
             Button { store.addHorizontalGuide(store.document.canvasSize.height / 2) } label: { Image(systemName: "arrow.left.and.right") }
                 .help("Add horizontal guide")
+                .disabled(!store.canEditDocument)
             Button { store.clearGuides() } label: { Image(systemName: "xmark") }
-                .help("Clear guides").disabled(store.verticalGuides.isEmpty && store.horizontalGuides.isEmpty)
+                .help("Clear guides").disabled(!store.canEditDocument || (store.verticalGuides.isEmpty && store.horizontalGuides.isEmpty))
         }
         .font(.caption)
         .padding(6)
@@ -169,22 +183,107 @@ struct CanvasView: View {
         let isSelected = store.selection.contains(node.id)
         let asset = node.layer.assetID.flatMap { store.document.asset(id: $0) }
         let resolution = asset.map { AssetResolver.shared.resolve($0, in: store.assetsDirectory) }
-        return LayerRenderView(layer: node.layer, asset: asset, resolution: resolution)
+        let preview = previewResult(for: node.layer)
+        return LayerRenderView(layer: node.layer, asset: asset, resolution: resolution, preview: preview)
             .overlay(isSelected ? Rectangle().stroke(theme.accent, lineWidth: 1.5) : nil)
+            .overlay(alignment: .top) {
+                if store.isTestMode, isSelected, let preview {
+                    Text(preview.displayText)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.thinMaterial, in: Capsule())
+                        .offset(y: -16)
+                }
+            }
             .position(x: node.absoluteFrame.midX, y: node.absoluteFrame.midY)
             .gesture(dragGesture(for: node))
             .simultaneousGesture(TapGesture().onEnded { toggleSelection(node.id) })
-            .allowsHitTesting(!node.layer.isLocked)
+            .allowsHitTesting(!node.layer.isLocked || store.isTestMode)
     }
 
     private func dragGesture(for node: RenderModel.Node) -> some Gesture {
-        DragGesture(minimumDistance: 2)
+        DragGesture(minimumDistance: store.isTestMode ? 0 : 2)
             .onChanged { value in
+                if store.isTestMode {
+                    updatePreviewInteraction(node, value: value)
+                    return
+                }
                 if !store.selection.contains(node.id) { store.selection = [node.id] }
                 store.beginInteractionIfNeeded()
                 moveSelected(node, translation: value.translation)
             }
-            .onEnded { _ in store.endInteraction() }
+            .onEnded { value in
+                if store.isTestMode {
+                    endPreviewInteraction(node, value: value)
+                } else {
+                    store.endInteraction()
+                }
+            }
+    }
+
+    private func previewResult(for layer: Layer) -> InteractionPreviewResult? {
+        guard store.isTestMode else { return nil }
+        if layer.kind == .meter, store.isTestMode,
+           let value = InteractionPreviewEngine.demoMeterValue(for: layer, time: demoTime) {
+            var state = store.previewState
+            InteractionPreviewEngine.setValue(value, for: layer, in: &state)
+            return InteractionPreviewEngine.previewResult(for: layer, state: state)
+        }
+        return store.previewResult(for: layer)
+    }
+
+    private func updatePreviewInteraction(_ node: RenderModel.Node, value: DragGesture.Value) {
+        let layer = node.layer
+        guard InteractionPreviewEngine.supportsInteraction(layer.kind) else { return }
+        store.selection = [layer.id]
+        let current = store.previewResult(for: layer)?.value ?? InteractionPreviewEngine.defaultValue(for: layer) ?? 0
+        switch layer.kind {
+        case .button:
+            if let pressed = InteractionPreviewEngine.pressedValue(for: layer, isPressed: true) {
+                store.setPreviewValue(pressed, for: layer)
+            }
+        case .slider, .fader, .control:
+            if let next = InteractionPreviewEngine.linearValue(for: layer, localPoint: VPoint(x: value.location.x, y: value.location.y)) {
+                store.setPreviewValue(next, for: layer)
+            }
+        case .knob:
+            let start = previewDragStart[layer.id] ?? current
+            previewDragStart[layer.id] = start
+            let fine = NSEvent.modifierFlags.contains(.option)
+            if let next = InteractionPreviewEngine.dragValue(
+                for: layer,
+                startingValue: start,
+                translation: VPoint(x: value.translation.width, y: value.translation.height),
+                fineAdjustment: fine) {
+                store.setPreviewValue(next, for: layer)
+            }
+        case .toggle:
+            break
+        case .meter:
+            break
+        default:
+            break
+        }
+    }
+
+    private func endPreviewInteraction(_ node: RenderModel.Node, value: DragGesture.Value) {
+        let layer = node.layer
+        defer { previewDragStart.removeValue(forKey: layer.id) }
+        switch layer.kind {
+        case .button:
+            if let released = InteractionPreviewEngine.pressedValue(for: layer, isPressed: false) {
+                store.setPreviewValue(released, for: layer)
+            }
+        case .toggle:
+            let current = store.previewResult(for: layer)?.value ?? InteractionPreviewEngine.defaultValue(for: layer) ?? 0
+            if value.translation.width == 0 && value.translation.height == 0,
+               let next = InteractionPreviewEngine.toggledValue(for: layer, currentValue: current) {
+                store.setPreviewValue(next, for: layer)
+            }
+        default:
+            break
+        }
     }
 
     private func moveSelected(_ node: RenderModel.Node, translation: CGSize) {
@@ -237,6 +336,10 @@ struct CanvasView: View {
     }
 
     private func toggleSelection(_ id: UUID) {
+        if store.isTestMode {
+            store.selection = [id]
+            return
+        }
         if NSEvent.modifierFlags.contains(.shift) {
             if store.selection.contains(id) { store.selection.remove(id) }
             else { store.selection.insert(id) }

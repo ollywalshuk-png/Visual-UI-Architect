@@ -3,6 +3,7 @@ import VUACore
 import RepositoryEngine
 import PersistenceEngine
 import ImportEngine
+import ControlBehaviourEngine
 
 /// Top-level window layout: layer sidebar, canvas, inspector, validation, and
 /// the editor toolbar.
@@ -146,12 +147,32 @@ struct MainWindow: View {
         }
 
         ToolbarItemGroup {
+            Picker("", selection: Binding(
+                get: { store.editorMode },
+                set: { store.switchEditorMode($0) })) {
+                ForEach(EditorInteractionMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 132)
+            .help("Switch between Build editing and Test interaction mode")
+
+            if store.isTestMode {
+                Button { store.resetPreviewValues() } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .help("Reset Test Mode preview values")
+            }
+
+            Divider()
+
             AddLayerMenu()
 
             Button { store.duplicateSelection() } label: { Image(systemName: "plus.square.on.square") }
-                .disabled(store.selection.isEmpty).help("Duplicate")
+                .disabled(store.selection.isEmpty || !store.canEditDocument).help("Duplicate")
             Button { store.deleteSelection() } label: { Image(systemName: "trash") }
-                .disabled(store.selection.isEmpty).help("Delete")
+                .disabled(store.selection.isEmpty || !store.canEditDocument).help("Delete")
 
             Divider()
 
@@ -283,6 +304,7 @@ struct AddLayerMenu: View {
         } label: {
             Label("Add Layer", systemImage: "plus")
         }
+        .disabled(!store.canEditDocument)
         .help("Add a layer")
     }
 

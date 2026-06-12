@@ -1,5 +1,6 @@
 import SwiftUI
 import VUACore
+import ControlBehaviourEngine
 
 extension Notification.Name {
     /// Posted by the File ▸ Import Existing UI… command; MainWindow opens the sheet.
@@ -41,27 +42,27 @@ struct EditorCommands: Commands {
         CommandGroup(replacing: .undoRedo) {
             Button("Undo") { store.undo() }
                 .keyboardShortcut("z", modifiers: .command)
-                .disabled(!store.canUndo)
+                .disabled(!store.canUndo || !store.canEditDocument)
             Button("Redo") { store.redo() }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
-                .disabled(!store.canRedo)
+                .disabled(!store.canRedo || !store.canEditDocument)
         }
         CommandGroup(after: .pasteboard) {
             Button("Cut") { store.cutSelection() }
                 .keyboardShortcut("x", modifiers: .command)
-                .disabled(store.selection.isEmpty)
+                .disabled(store.selection.isEmpty || !store.canEditDocument)
             Button("Copy") { store.copySelection() }
                 .keyboardShortcut("c", modifiers: .command)
                 .disabled(store.selection.isEmpty)
             Button("Paste") { store.paste() }
                 .keyboardShortcut("v", modifiers: .command)
-                .disabled(!store.canPaste)
+                .disabled(!store.canPaste || !store.canEditDocument)
             Button("Duplicate") { store.duplicateSelection() }
                 .keyboardShortcut("d", modifiers: .command)
-                .disabled(store.selection.isEmpty)
+                .disabled(store.selection.isEmpty || !store.canEditDocument)
             Button("Delete") { store.deleteSelection() }
                 .keyboardShortcut(.delete, modifiers: [])
-                .disabled(store.selection.isEmpty)
+                .disabled(store.selection.isEmpty || !store.canEditDocument)
             Divider()
             Button("Select All") { store.selectAll() }
                 .keyboardShortcut("a", modifiers: .command)
@@ -72,23 +73,38 @@ struct EditorCommands: Commands {
         CommandMenu("Arrange") {
             Button("Group") { store.groupSelection() }
                 .keyboardShortcut("g", modifiers: .command)
-                .disabled(!store.canGroup)
+                .disabled(!store.canGroup || !store.canEditDocument)
             Button("Ungroup") { store.ungroupSelection() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
-                .disabled(!store.canUngroup)
+                .disabled(!store.canUngroup || !store.canEditDocument)
             Divider()
             Button("Bring to Front") { store.bringSelectionToFront() }
                 .keyboardShortcut("]", modifiers: [.command, .shift])
-                .disabled(store.selection.isEmpty)
+                .disabled(store.selection.isEmpty || !store.canEditDocument)
             Button("Bring Forward") { store.bringSelectionForward() }
                 .keyboardShortcut("]", modifiers: .command)
-                .disabled(store.selection.isEmpty)
+                .disabled(store.selection.isEmpty || !store.canEditDocument)
             Button("Send Backward") { store.sendSelectionBackward() }
                 .keyboardShortcut("[", modifiers: .command)
-                .disabled(store.selection.isEmpty)
+                .disabled(store.selection.isEmpty || !store.canEditDocument)
             Button("Send to Back") { store.sendSelectionToBack() }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
-                .disabled(store.selection.isEmpty)
+                .disabled(store.selection.isEmpty || !store.canEditDocument)
+        }
+        CommandMenu("Mode") {
+            Button(store.editorMode == .build ? "Enter Test Mode" : "Return to Build Mode") {
+                store.toggleEditorMode()
+            }
+            .keyboardShortcut("t", modifiers: .command)
+            Button("Exit Active Test Interaction") {
+                store.exitActivePreviewInteraction()
+            }
+            .keyboardShortcut(.cancelAction)
+            .disabled(!store.isTestMode)
+            Button("Reset Preview Values") {
+                store.resetPreviewValues()
+            }
+            .disabled(!store.isTestMode)
         }
     }
 }

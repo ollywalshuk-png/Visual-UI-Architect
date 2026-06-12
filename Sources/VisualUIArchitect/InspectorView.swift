@@ -62,7 +62,7 @@ struct InspectorView: View {
 
                 constraintsSection(layer)
 
-                if layer.kind.isPluginControl {
+                if layer.kind.isPluginControl || InteractionPreviewEngine.supportsInteraction(layer.kind) {
                     controlSection(layer)
                     behaviourSection(layer)
                 }
@@ -529,7 +529,29 @@ struct InspectorView: View {
         let c = layer.control ?? ControlBehaviourResolver.defaultMetadata(for: layer.kind, name: layer.name)
             ?? ControlMetadata(parameterID: layer.name.lowercased())
         let behaviour = ControlBehaviourResolver.profile(for: layer)
+        let preview = store.previewResult(for: layer)
+        let status = InteractionPreviewEngine.status(for: layer)
         Section("Behaviour") {
+            LabeledContent("Status") {
+                Text(status.displayName)
+                    .foregroundStyle(statusColor(status))
+            }
+            if let preview {
+                LabeledContent(store.isTestMode ? "Current Preview" : "Default Preview") {
+                    Text(preview.displayText).monospacedDigit()
+                }
+                if store.isTestMode {
+                    HStack {
+                        Button("Reset Preview") { store.resetPreviewValue(for: layer) }
+                        Button("Apply Preview Value") { store.applyPreviewValueToSelectedDefault() }
+                            .disabled(store.previewState.values[layer.id] == nil)
+                    }
+                }
+            }
+            if let behaviour {
+                LabeledContent("Drag Axis") { Text(behaviour.dragAxis.rawValue.capitalized) }
+                LabeledContent("Snap") { Text(behaviour.snapBehaviour.rawValue.capitalized) }
+            }
             LabeledContent("Type") {
                 Picker("", selection: Binding(
                     get: { ControlBehaviourType(rawValue: c.behaviourType ?? "") ?? behaviour?.type ?? .horizontalSlider },
@@ -599,7 +621,9 @@ struct InspectorView: View {
                 get: { c.automationEnabled ?? false },
                 set: { v in store.updateSelectedControl { $0.automationEnabled = v } }))
 
-            let issues = ControlBehaviourDiagnostics.validate(layer)
+            let issues = store.isTestMode
+                ? ControlBehaviourDiagnostics.validatePreview(layer)
+                : ControlBehaviourDiagnostics.validate(layer)
             ForEach(issues) { issue in
                 Label(issue.message, systemImage: "exclamationmark.triangle")
                     .font(.caption)
@@ -640,6 +664,15 @@ struct InspectorView: View {
         case .meterReadout:
             meta.isContinuous = true; meta.stepCount = nil
             meta.interactionMode = ControlInteractionMode.readOnly.rawValue
+        }
+    }
+
+    private func statusColor(_ status: InteractionFunctionalStatus) -> Color {
+        switch status {
+        case .functional: return .green
+        case .partiallyFunctional: return .orange
+        case .visualOnly: return .secondary
+        case .missingBehaviour: return .red
         }
     }
 

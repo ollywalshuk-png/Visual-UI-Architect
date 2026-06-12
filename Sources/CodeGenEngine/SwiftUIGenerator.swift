@@ -38,6 +38,11 @@ public struct SwiftUIGenerator: CodeGenerator {
             b.line()
         }
         b.block("struct \(viewName): View {") { b in
+            let states = controlStateBindings(document)
+            for (name, value) in states {
+                b.line("@State private var \(name): Double = \(fmt(value))")
+            }
+            if !states.isEmpty { b.line() }
             b.block("var body: some View {") { b in
                 b.block("ZStack(alignment: .topLeading) {") { b in
                     for layer in document.roots where layer.isVisible {
@@ -188,7 +193,7 @@ public struct SwiftUIGenerator: CodeGenerator {
             b.line("\(shapeExpr(layer.mask?.shape ?? .rectangle, layer))")
             b.indented { $0.line(".fill(\(fillExpr(layer)))") }
         case .button:
-            b.block("Button(action: {}) {") { b in
+            b.block("Button(action: { \(buttonAction(for: layer)) }) {") { b in
                 b.line("Text(\(quoted(layer.text ?? layer.name)))")
             }
             b.line("}")
@@ -203,11 +208,19 @@ public struct SwiftUIGenerator: CodeGenerator {
                 b.indented { $0.line(".resizable()") }
             }
         case .slider:
-            let value = layer.control.map { fmt($0.normalizedDefault) } ?? "0.5"
-            b.line("Slider(value: .constant(\(value)))")
+            if let c = layer.control {
+                b.line("Slider(value: \(bindingExpression(for: layer)), in: \(fmt(c.minValue))...\(fmt(c.maxValue)))")
+            } else {
+                b.line("Slider(value: .constant(0.5))")
+            }
         case .toggle:
-            let on = (layer.control?.defaultValue ?? 1) >= 0.5 ? "true" : "false"
-            b.line("Toggle(\(quoted(layer.text ?? layer.name)), isOn: .constant(\(on)))")
+            if let c = layer.control {
+                let state = controlStateName(for: layer)
+                b.line("Toggle(\(quoted(layer.text ?? layer.name)), isOn: Binding(get: { \(state) >= \(fmt((c.minValue + c.maxValue) / 2)) }, set: { \(state) = $0 ? \(fmt(c.maxValue)) : \(fmt(c.minValue)) }))")
+            } else {
+                let on = (layer.control?.defaultValue ?? 1) >= 0.5 ? "true" : "false"
+                b.line("Toggle(\(quoted(layer.text ?? layer.name)), isOn: .constant(\(on)))")
+            }
         case .knob, .fader, .meter, .control:
             // Plugin controls come from the VUAControls library, parameterised
             // by the layer's AU metadata (range, default, label).
@@ -234,7 +247,7 @@ public struct SwiftUIGenerator: CodeGenerator {
         let view = controlViewName(for: layer)
         let c = layer.control
         let defaultValue = c?.defaultValue ?? 0.5
-        var args = ["value: .constant(\(fmt(defaultValue)))"]
+        var args = ["value: \(c == nil ? ".constant(\(fmt(defaultValue)))" : bindingExpression(for: layer))"]
         if let c {
             args.append("in: \(fmt(c.minValue))...\(fmt(c.maxValue))")
             // Only knob/fader expose a label argument in VUAControls.
@@ -243,6 +256,35 @@ public struct SwiftUIGenerator: CodeGenerator {
             }
         }
         return "\(view)(\(args.joined(separator: ", ")))"
+    }
+
+    private func controlStateBindings(_ document: Document) -> [(String, Double)] {
+        var seen = Set<String>()
+        var out: [(String, Double)] = []
+        for layer in document.allLayers where layer.control != nil {
+            let name = controlStateName(for: layer)
+            guard !seen.contains(name), let control = layer.control else { continue }
+            seen.insert(name)
+            out.append((name, control.clamp(control.defaultValue)))
+        }
+        return out
+    }
+
+    private func bindingExpression(for layer: Layer) -> String {
+        guard layer.control != nil else { return ".constant(0.5)" }
+        return "$\(controlStateName(for: layer))"
+    }
+
+    private func buttonAction(for layer: Layer) -> String {
+        guard let c = layer.control else { return "" }
+        let state = controlStateName(for: layer)
+        return "\(state) = \(state) >= \(fmt((c.minValue + c.maxValue) / 2)) ? \(fmt(c.minValue)) : \(fmt(c.maxValue))"
+    }
+
+    private func controlStateName(for layer: Layer) -> String {
+        let raw = layer.control?.bindingName ?? layer.control?.parameterID ?? layer.name
+        let suffix = layer.id.uuidString.prefix(8).lowercased()
+        return "vua_\(sanitizeIdentifier(raw))_\(suffix)"
     }
 
     /// True when the document contains controls backed by the VUAControls library.
@@ -621,6 +663,15 @@ public struct SwiftUIGenerator: CodeGenerator {
     private func sanitizeType(_ name: String) -> String {
         let allowed = name.filter { $0.isLetter || $0.isNumber || $0 == "_" }
         return allowed.isEmpty ? "CustomView" : allowed
+    }
+
+    private func sanitizeIdentifier(_ name: String) -> String {
+        let mapped = name.map { ch -> Character in
+            (ch.isLetter || ch.isNumber || ch == "_") ? ch : "_"
+        }
+        var value = String(mapped)
+        if value.first?.isNumber == true { value = "_\(value)" }
+        return value.isEmpty ? "value" : value
     }
 }
 

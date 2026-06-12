@@ -1,5 +1,6 @@
 import SwiftUI
 import VUACore
+import ControlBehaviourEngine
 
 /// Renders the visual appearance of a single layer (kind-specific), sized to
 /// fill its frame. Positioning is handled by the canvas.
@@ -8,6 +9,7 @@ struct LayerRenderView: View {
     let asset: Asset?
     /// Resolved image for the layer's asset (nil when the layer has no asset).
     var resolution: AssetResolver.Resolution?
+    var preview: InteractionPreviewResult? = nil
 
     var body: some View {
         content
@@ -25,12 +27,14 @@ struct LayerRenderView: View {
     private var content: some View {
         switch layer.kind {
         case .button:
+            let pressed = (preview?.normalizedValue ?? 0) >= 0.5 && preview?.isActive == true
             ZStack {
-                shape.fill(fillColor)
+                shape.fill(fillColor.opacity(pressed ? 0.72 : 1))
                 Text(layer.text ?? layer.name)
                     .font(textFont)
                     .foregroundStyle(layer.style.foregroundColor?.swiftUI ?? .white)
             }
+            .scaleEffect(pressed ? 0.97 : 1)
         case .label, .text:
             Text(layer.text ?? layer.name)
                 .font(textFont)
@@ -45,12 +49,13 @@ struct LayerRenderView: View {
         case .meter:
             meterView
         case .toggle:
+            let isOn = (preview?.normalizedValue ?? layer.control?.normalizedDefault ?? 1) >= 0.5
             HStack {
                 Text(layer.text ?? "Toggle").font(textFont)
                     .foregroundStyle(layer.style.foregroundColor?.swiftUI ?? .primary)
                 Spacer(minLength: 4)
-                Capsule().fill(Color.green).frame(width: 36, height: 20)
-                    .overlay(Circle().fill(.white).padding(2), alignment: .trailing)
+                Capsule().fill(isOn ? Color.green : Color.gray.opacity(0.55)).frame(width: 36, height: 20)
+                    .overlay(Circle().fill(.white).padding(2), alignment: isOn ? .trailing : .leading)
             }
         case .image:
             imageView
@@ -200,22 +205,22 @@ struct LayerRenderView: View {
     }
 
     private var sliderView: some View {
-        GeometryReader { geo in
+        let pos = preview?.normalizedValue ?? layer.control?.normalizedDefault ?? 0.5
+        return GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.gray.opacity(0.4)).frame(height: 4)
                 Capsule().fill(layer.style.backgroundColor?.swiftUI ?? .accentColor)
-                    .frame(width: geo.size.width * 0.5, height: 4)
+                    .frame(width: geo.size.width * pos, height: 4)
                 Circle().fill(.white).frame(width: 18, height: 18)
-                    .offset(x: geo.size.width * 0.5 - 9)
+                    .offset(x: geo.size.width * pos - 9)
             }
             .frame(maxHeight: .infinity)
         }
     }
 
     private var knobView: some View {
-        // Pointer angle reflects the parameter's default position (−135°…+135°).
-        let pos = layer.control?.normalizedDefault ?? 0.5
-        let angle = Angle(degrees: -135 + pos * 270)
+        let pos = preview?.normalizedValue ?? layer.control?.normalizedDefault ?? 0.5
+        let angle = Angle(degrees: preview?.rotationDegrees ?? (-135 + pos * 270))
         return ZStack {
             Circle().fill(fillColor)
             Circle().stroke(Color.white.opacity(0.6), lineWidth: 2)
@@ -226,7 +231,7 @@ struct LayerRenderView: View {
     }
 
     private var faderView: some View {
-        let pos = layer.control?.normalizedDefault ?? 0.5
+        let pos = preview?.normalizedValue ?? layer.control?.normalizedDefault ?? 0.5
         return GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 Capsule().fill(Color.black.opacity(0.4))
@@ -240,12 +245,13 @@ struct LayerRenderView: View {
     }
 
     private var meterView: some View {
-        GeometryReader { geo in
+        let pos = preview?.normalizedValue ?? 0.65
+        return GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 RoundedRectangle(cornerRadius: 3).fill(Color.black.opacity(0.5))
                 RoundedRectangle(cornerRadius: 3)
                     .fill(LinearGradient(colors: [.green, .yellow, .red], startPoint: .bottom, endPoint: .top))
-                    .frame(height: geo.size.height * 0.65)
+                    .frame(height: geo.size.height * pos)
             }
         }
     }
