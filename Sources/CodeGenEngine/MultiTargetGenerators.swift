@@ -1,5 +1,6 @@
 import Foundation
 import VUACore
+import ControlBehaviourEngine
 
 /// Generates a React component from the layer tree using absolute positioning.
 public struct ReactGenerator: CodeGenerator {
@@ -12,8 +13,11 @@ public struct ReactGenerator: CodeGenerator {
 
     public func generate(document: Document) throws -> GeneratedSource {
         var b = SourceBuilder(indentUnit: "  ")
+        let plan = BehaviourBindingPlanner.plan(for: document)
         b.line("import React from 'react';")
         b.line()
+        Gen.emitJavaScriptBindingPlan(plan, exportKeyword: "export ", into: &b)
+        if !plan.bindings.isEmpty { b.line() }
         b.block("export default function \(Gen.safeType(componentName))({ viewModel = {} }) {") { b in
             b.line("return (")
             b.indented { b in
@@ -44,9 +48,12 @@ public struct ReactNativeGenerator: CodeGenerator {
 
     public func generate(document: Document) throws -> GeneratedSource {
         var b = SourceBuilder(indentUnit: "  ")
+        let plan = BehaviourBindingPlanner.plan(for: document)
         b.line("import React from 'react';")
         b.line("import { Image, Pressable, StyleSheet, Switch, Text, View } from 'react-native';")
         b.line()
+        Gen.emitJavaScriptBindingPlan(plan, exportKeyword: "export ", into: &b)
+        if !plan.bindings.isEmpty { b.line() }
         b.block("export default function \(Gen.safeType(componentName))({ viewModel = {} }) {") { b in
             b.line("return (")
             b.indented { b in
@@ -81,6 +88,7 @@ public struct HTMLCSSGenerator: CodeGenerator {
 
     public func generate(document: Document) throws -> GeneratedSource {
         var b = SourceBuilder(indentUnit: "  ")
+        let plan = BehaviourBindingPlanner.plan(for: document)
         b.line("<!doctype html>")
         b.line("<html lang=\"en\">")
         b.indented { b in
@@ -108,6 +116,11 @@ public struct HTMLCSSGenerator: CodeGenerator {
                     }
                 }
                 b.line("</main>")
+                if !plan.bindings.isEmpty {
+                    b.line("<script type=\"application/json\" id=\"vua-binding-plan\">")
+                    b.indented { $0.line(Gen.jsonBindingPlan(plan)) }
+                    b.line("</script>")
+                }
             }
             b.line("</body>")
         }
@@ -125,10 +138,12 @@ public struct ElectronRendererGenerator: CodeGenerator {
 
     public func generate(document: Document) throws -> GeneratedSource {
         let html = try HTMLCSSGenerator(fileName: "renderer.html").generate(document: document).contents
+        let plan = BehaviourBindingPlanner.plan(for: document)
         let bridge = """
 
         <script>
           window.vuaBindings = window.vuaBindings || {};
+          window.vuaBindingPlan = \(Gen.jsonBindingPlan(plan));
           document.documentElement.setAttribute('data-vua-target', 'electron-renderer');
         </script>
         """
@@ -150,8 +165,11 @@ public struct FlutterGenerator: CodeGenerator {
 
     public func generate(document: Document) throws -> GeneratedSource {
         var b = SourceBuilder(indentUnit: "  ")
+        let plan = BehaviourBindingPlanner.plan(for: document)
         b.line("import 'package:flutter/material.dart';")
         b.line()
+        Gen.emitDartBindingPlan(plan, into: &b)
+        if !plan.bindings.isEmpty { b.line() }
         b.block("class \(Gen.safeType(widgetName)) extends StatelessWidget {") { b in
             b.line("const \(Gen.safeType(widgetName))({super.key});")
             b.line()
@@ -215,7 +233,7 @@ private enum ReactMarkup {
     static func emit(_ layer: Layer, into b: inout SourceBuilder, document: Document) {
         let anchor = Gen.anchor(layer)
         let style = Gen.reactLayerStyle(layer)
-        let data = "data-vua-anchor=\(Gen.jsxString(anchor))"
+        let data = "data-vua-anchor=\(Gen.jsxString(anchor))\(Gen.reactBindingAttributes(layer))"
         switch layer.kind {
         case .container, .panel, .background, .group, .shape, .polygon, .gradient, .mask, .line, .vectorPath:
             b.line("<div \(data) style={\(style)}>")
@@ -257,6 +275,9 @@ private enum ReactNativeMarkup {
         let anchor = Gen.anchor(layer)
         let style = Gen.reactNativeLayerStyle(layer)
         let nativeID = "nativeID=\(Gen.jsxString(anchor))"
+        if let comment = Gen.jsxBindingComment(layer) {
+            b.line(comment)
+        }
         switch layer.kind {
         case .container, .panel, .background, .group, .shape, .polygon, .gradient, .mask, .line, .vectorPath:
             b.line("<View \(nativeID) style={\(style)}>")
@@ -296,9 +317,10 @@ private enum HTMLMarkup {
     static func emit(_ layer: Layer, into b: inout SourceBuilder, document: Document) {
         let anchor = Gen.htmlAttribute(Gen.anchor(layer))
         let style = Gen.webLayerStyle(layer)
+        let bindingAttributes = Gen.htmlBindingAttributes(layer)
         switch layer.kind {
         case .container, .panel, .background, .group, .shape, .polygon, .gradient, .mask, .line, .vectorPath:
-            b.line("<div class=\"vua-layer\" data-vua-anchor=\"\(anchor)\" style=\"\(style)\">")
+            b.line("<div class=\"vua-layer\" data-vua-anchor=\"\(anchor)\"\(bindingAttributes) style=\"\(style)\">")
             b.indented { b in
                 for child in layer.children where child.isVisible {
                     emit(child, into: &b, document: document)
@@ -306,23 +328,23 @@ private enum HTMLMarkup {
             }
             b.line("</div>")
         case .button:
-            b.line("<button class=\"vua-layer\" data-vua-anchor=\"\(anchor)\" data-vua-action=\"\(Gen.htmlAttribute(Gen.actionName(layer)))\" style=\"\(style)\">\(Gen.html(layer.text ?? layer.name))</button>")
+            b.line("<button class=\"vua-layer\" data-vua-anchor=\"\(anchor)\"\(bindingAttributes) data-vua-action=\"\(Gen.htmlAttribute(Gen.actionName(layer)))\" style=\"\(style)\">\(Gen.html(layer.text ?? layer.name))</button>")
         case .label, .text:
-            b.line("<span class=\"vua-layer\" data-vua-anchor=\"\(anchor)\" style=\"\(style)\">\(Gen.html(layer.text ?? layer.name))</span>")
+            b.line("<span class=\"vua-layer\" data-vua-anchor=\"\(anchor)\"\(bindingAttributes) style=\"\(style)\">\(Gen.html(layer.text ?? layer.name))</span>")
         case .image:
             let src = Gen.assetName(layer, document: document) ?? layer.name
-            b.line("<img class=\"vua-layer\" data-vua-anchor=\"\(anchor)\" src=\"\(Gen.htmlAttribute(src))\" alt=\"\(Gen.htmlAttribute(layer.name))\" style=\"\(style)\">")
+            b.line("<img class=\"vua-layer\" data-vua-anchor=\"\(anchor)\"\(bindingAttributes) src=\"\(Gen.htmlAttribute(src))\" alt=\"\(Gen.htmlAttribute(layer.name))\" style=\"\(style)\">")
         case .slider, .knob, .fader, .control:
             let binding = Gen.bindingName(layer)
-            b.line("<input class=\"vua-layer\" data-vua-anchor=\"\(anchor)\" data-vua-binding=\"\(Gen.htmlAttribute(binding))\" data-vua-control-kind=\"\(Gen.htmlAttribute(layer.kind.displayName))\" type=\"range\" min=\"\(Gen.controlMin(layer))\" max=\"\(Gen.controlMax(layer))\" value=\"\(Gen.controlDefault(layer))\" style=\"\(style)\">")
+            b.line("<input class=\"vua-layer\" data-vua-anchor=\"\(anchor)\"\(bindingAttributes) data-vua-binding=\"\(Gen.htmlAttribute(binding))\" data-vua-control-kind=\"\(Gen.htmlAttribute(layer.kind.displayName))\" type=\"range\" min=\"\(Gen.controlMin(layer))\" max=\"\(Gen.controlMax(layer))\" value=\"\(Gen.controlDefault(layer))\" style=\"\(style)\">")
         case .meter:
-            b.line("<progress class=\"vua-layer\" data-vua-anchor=\"\(anchor)\" value=\"\(Gen.controlDefault(layer))\" max=\"\(Gen.controlMax(layer))\" style=\"\(style)\"></progress>")
+            b.line("<progress class=\"vua-layer\" data-vua-anchor=\"\(anchor)\"\(bindingAttributes) value=\"\(Gen.controlDefault(layer))\" max=\"\(Gen.controlMax(layer))\" style=\"\(style)\"></progress>")
         case .toggle:
             let binding = Gen.bindingName(layer)
             let checked = (layer.control?.defaultValue ?? 1) >= 0.5 ? " checked" : ""
-            b.line("<label class=\"vua-layer\" data-vua-anchor=\"\(anchor)\" data-vua-binding=\"\(Gen.htmlAttribute(binding))\" style=\"\(style)\"><input type=\"checkbox\"\(checked)> \(Gen.html(layer.text ?? layer.name))</label>")
+            b.line("<label class=\"vua-layer\" data-vua-anchor=\"\(anchor)\"\(bindingAttributes) data-vua-binding=\"\(Gen.htmlAttribute(binding))\" style=\"\(style)\"><input type=\"checkbox\"\(checked)> \(Gen.html(layer.text ?? layer.name))</label>")
         case .custom(let typeName):
-            b.line("<div class=\"vua-layer\" data-vua-anchor=\"\(anchor)\" data-vua-custom=\"\(Gen.htmlAttribute(typeName))\" style=\"\(style)\"></div>")
+            b.line("<div class=\"vua-layer\" data-vua-anchor=\"\(anchor)\"\(bindingAttributes) data-vua-custom=\"\(Gen.htmlAttribute(typeName))\" style=\"\(style)\"></div>")
         }
     }
 }
@@ -344,6 +366,9 @@ private enum FlutterMarkup {
     }
 
     private static func emitWidget(_ layer: Layer, into b: inout SourceBuilder, document: Document) {
+        if let comment = Gen.dartBindingComment(layer) {
+            b.line(comment)
+        }
         switch layer.kind {
         case .container, .panel, .background, .group, .shape, .polygon, .gradient, .mask, .line, .vectorPath:
             b.line("Container(")
@@ -411,9 +436,12 @@ private struct AppleImperativeGenerator {
 
     func generate(_ document: Document) -> GeneratedSource {
         var b = SourceBuilder()
+        let plan = BehaviourBindingPlanner.plan(for: document)
         b.line("import \(platform == .uiKit ? "UIKit" : "AppKit")")
         b.line()
         b.block("final class \(Gen.safeType(className)): \(platform == .uiKit ? "UIViewController" : "NSViewController") {") { b in
+            Gen.emitSwiftBindingPlan(plan, into: &b)
+            if !plan.bindings.isEmpty { b.line() }
             switch platform {
             case .uiKit:
                 b.line("override func viewDidLoad() {")
@@ -444,6 +472,9 @@ private struct AppleImperativeGenerator {
     private func emitLayer(_ layer: Layer, parent: String, into b: inout SourceBuilder, document: Document, counter: Counter) {
         let name = "\(Gen.safeVar(layer.name))\(counter.next())"
         b.line("// \(layer.name) [\(layer.kind.displayName)]")
+        if let comment = Gen.swiftBindingComment(layer) {
+            b.line(comment)
+        }
         b.line("let \(name) = \(constructor(for: layer, document: document))")
         b.line("\(name).frame = \(rect(layer.frame))")
         applyStyle(layer, variable: name, into: &b)
@@ -564,6 +595,9 @@ private enum Gen {
     }
 
     static func bindingName(_ layer: Layer) -> String {
+        if let property = behaviourBinding(for: layer)?.propertyName {
+            return property
+        }
         let raw = layer.control?.bindingName?.nilIfBlank
             ?? layer.control?.parameterID.nilIfBlank
             ?? anchor(layer)
@@ -571,7 +605,70 @@ private enum Gen {
     }
 
     static func actionName(_ layer: Layer) -> String {
-        safeVar(bindingName(layer) + "Action")
+        behaviourBinding(for: layer)?.actionName ?? safeVar(bindingName(layer) + "Action")
+    }
+
+    static func emitJavaScriptBindingPlan(_ plan: BehaviourViewModelPlan, exportKeyword: String, into b: inout SourceBuilder) {
+        guard !plan.bindings.isEmpty else { return }
+        b.line("\(exportKeyword)const vuaBindingPlan = [")
+        b.indented { b in
+            for binding in plan.bindings {
+                b.line("\(jsBindingLiteral(binding)),")
+            }
+        }
+        b.line("];")
+    }
+
+    static func emitDartBindingPlan(_ plan: BehaviourViewModelPlan, into b: inout SourceBuilder) {
+        guard !plan.bindings.isEmpty else { return }
+        b.line("const List<Map<String, Object?>> vuaBindingPlan = [")
+        b.indented { b in
+            for binding in plan.bindings {
+                b.line("\(dartBindingLiteral(binding)),")
+            }
+        }
+        b.line("];")
+    }
+
+    static func emitSwiftBindingPlan(_ plan: BehaviourViewModelPlan, into b: inout SourceBuilder) {
+        guard !plan.bindings.isEmpty else { return }
+        b.line("private let vuaBindingPlan: [[String: Any]] = [")
+        b.indented { b in
+            for binding in plan.bindings {
+                b.line("\(swiftBindingLiteral(binding)),")
+            }
+        }
+        b.line("]")
+    }
+
+    static func jsonBindingPlan(_ plan: BehaviourViewModelPlan) -> String {
+        "[" + plan.bindings.map(jsonBindingLiteral).joined(separator: ",") + "]"
+    }
+
+    static func reactBindingAttributes(_ layer: Layer) -> String {
+        guard let binding = behaviourBinding(for: layer) else { return "" }
+        return bindingAttributes(binding).map { key, value in
+            " \(key)=\(jsxString(value))"
+        }.joined()
+    }
+
+    static func htmlBindingAttributes(_ layer: Layer) -> String {
+        guard let binding = behaviourBinding(for: layer) else { return "" }
+        return bindingAttributes(binding).map { key, value in
+            " \(key)=\"\(htmlAttribute(value))\""
+        }.joined()
+    }
+
+    static func jsxBindingComment(_ layer: Layer) -> String? {
+        bindingComment(layer).map { "{/* \($0) */}" }
+    }
+
+    static func dartBindingComment(_ layer: Layer) -> String? {
+        bindingComment(layer).map { "// \($0)" }
+    }
+
+    static func swiftBindingComment(_ layer: Layer) -> String? {
+        bindingComment(layer).map { "// \($0)" }
     }
 
     static func controlMin(_ layer: Layer) -> String {
@@ -588,6 +685,125 @@ private enum Gen {
 
     static func controlNormalized(_ layer: Layer) -> String {
         fmt(layer.control?.normalizedDefault ?? 0.5)
+    }
+
+    private static func behaviourBinding(for layer: Layer) -> BehaviourBinding? {
+        BehaviourBindingPlanner.plan(for: Document(name: "Layer", roots: [layer])).bindings.first
+    }
+
+    private static func bindingAttributes(_ binding: BehaviourBinding) -> [(String, String)] {
+        var out: [(String, String)] = [
+            ("data-vua-binding-kind", binding.kind.rawValue),
+            ("data-vua-value-type", binding.valueType.rawValue),
+            ("data-vua-parameter", binding.parameterID),
+            ("data-vua-unit", binding.unit.rawValue),
+            ("data-vua-automation", binding.automationEnabled ? "true" : "false")
+        ]
+        if let property = binding.propertyName { out.append(("data-vua-binding", property)) }
+        if let action = binding.actionName { out.append(("data-vua-action-binding", action)) }
+        if let midi = binding.midiCC { out.append(("data-vua-midi-cc", String(midi))) }
+        if let au = binding.auParameterID { out.append(("data-vua-au-parameter", au)) }
+        return out
+    }
+
+    private static func bindingComment(_ layer: Layer) -> String? {
+        guard let binding = behaviourBinding(for: layer) else { return nil }
+        let target = binding.propertyName ?? binding.actionName ?? binding.parameterID
+        return "VUA binding: \(binding.kind.rawValue) \(target), \(binding.parameterID) \(fmt(binding.minValue))...\(fmt(binding.maxValue)) \(binding.unit.rawValue)"
+    }
+
+    private static func bindingPairs(_ binding: BehaviourBinding) -> [(String, BindingValue)] {
+        var pairs: [(String, BindingValue)] = [
+            ("layerID", .string(binding.layerID.uuidString)),
+            ("anchorID", .string(binding.sourceAnchorID ?? binding.layerID.uuidString)),
+            ("layerName", .string(binding.layerName)),
+            ("kind", .string(binding.kind.rawValue)),
+            ("valueType", .string(binding.valueType.rawValue)),
+            ("parameterID", .string(binding.parameterID)),
+            ("minValue", .number(binding.minValue)),
+            ("maxValue", .number(binding.maxValue)),
+            ("defaultValue", .number(binding.defaultValue)),
+            ("unit", .string(binding.unit.rawValue)),
+            ("automationEnabled", .bool(binding.automationEnabled))
+        ]
+        if let property = binding.propertyName { pairs.append(("propertyName", .string(property))) }
+        if let action = binding.actionName { pairs.append(("actionName", .string(action))) }
+        if let midi = binding.midiCC { pairs.append(("midiCC", .int(midi))) }
+        if let au = binding.auParameterID { pairs.append(("auParameterID", .string(au))) }
+        return pairs
+    }
+
+    private enum BindingValue {
+        case string(String)
+        case number(Double)
+        case int(Int)
+        case bool(Bool)
+    }
+
+    private static func jsBindingLiteral(_ binding: BehaviourBinding) -> String {
+        "{ " + bindingPairs(binding).map { key, value in
+            "\(key): \(jsLiteral(value))"
+        }.joined(separator: ", ") + " }"
+    }
+
+    private static func jsonBindingLiteral(_ binding: BehaviourBinding) -> String {
+        "{" + bindingPairs(binding).map { key, value in
+            "\"\(jsonEscape(key))\":\(jsonLiteral(value))"
+        }.joined(separator: ",") + "}"
+    }
+
+    private static func dartBindingLiteral(_ binding: BehaviourBinding) -> String {
+        "{ " + bindingPairs(binding).map { key, value in
+            "\(dartString(key)): \(dartLiteral(value))"
+        }.joined(separator: ", ") + " }"
+    }
+
+    private static func swiftBindingLiteral(_ binding: BehaviourBinding) -> String {
+        "[" + bindingPairs(binding).map { key, value in
+            "\(swiftString(key)): \(swiftLiteral(value))"
+        }.joined(separator: ", ") + "]"
+    }
+
+    private static func jsLiteral(_ value: BindingValue) -> String {
+        switch value {
+        case .string(let text): return jsxString(text)
+        case .number(let value): return fmt(value)
+        case .int(let value): return String(value)
+        case .bool(let value): return value ? "true" : "false"
+        }
+    }
+
+    private static func jsonLiteral(_ value: BindingValue) -> String {
+        switch value {
+        case .string(let text): return "\"\(jsonEscape(text))\""
+        case .number(let value): return fmt(value)
+        case .int(let value): return String(value)
+        case .bool(let value): return value ? "true" : "false"
+        }
+    }
+
+    private static func dartLiteral(_ value: BindingValue) -> String {
+        switch value {
+        case .string(let text): return dartString(text)
+        case .number(let value): return fmt(value)
+        case .int(let value): return String(value)
+        case .bool(let value): return value ? "true" : "false"
+        }
+    }
+
+    private static func swiftLiteral(_ value: BindingValue) -> String {
+        switch value {
+        case .string(let text): return swiftString(text)
+        case .number(let value): return fmt(value)
+        case .int(let value): return String(value)
+        case .bool(let value): return value ? "true" : "false"
+        }
+    }
+
+    private static func jsonEscape(_ text: String) -> String {
+        text.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 
     static func webRootStyle(_ document: Document) -> String {

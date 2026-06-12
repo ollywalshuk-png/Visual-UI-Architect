@@ -2047,6 +2047,33 @@ func runChecks() async {
                 modelSource.contains("@Published var synthCutoff: Double = 1000") &&
                 modelSource.contains("func triggerAction()") &&
                 modelSource.contains("\"cutoff\": 74"))
+
+        var exportDoc = Document(name: "Binding Exports", roots: [knobLayer, button, toggle, meter])
+        exportDoc.codeGenTarget = .react
+        let reactExport = (try? CodeGenService().generate(exportDoc).contents) ?? ""
+        exportDoc.codeGenTarget = .htmlCSS
+        let htmlExport = (try? CodeGenService().generate(exportDoc).contents) ?? ""
+        exportDoc.codeGenTarget = .flutter
+        let flutterExport = (try? CodeGenService().generate(exportDoc).contents) ?? ""
+        exportDoc.codeGenTarget = .uiKit
+        let uiKitExport = (try? CodeGenService().generate(exportDoc).contents) ?? ""
+        c.check("p54 react export carries binding plan",
+                reactExport.contains("export const vuaBindingPlan") &&
+                reactExport.contains("propertyName: 'synthCutoff'") &&
+                reactExport.contains("midiCC: 74") &&
+                reactExport.contains("data-vua-binding-kind='value'"))
+        c.check("p54 html export carries binding json attrs",
+                htmlExport.contains("id=\"vua-binding-plan\"") &&
+                htmlExport.contains("\"propertyName\":\"synthCutoff\"") &&
+                htmlExport.contains("data-vua-midi-cc=\"74\""))
+        c.check("p54 flutter export carries binding plan",
+                flutterExport.contains("const List<Map<String, Object?>> vuaBindingPlan") &&
+                flutterExport.contains("'propertyName': 'synthCutoff'") &&
+                flutterExport.contains("// VUA binding: value synthCutoff"))
+        c.check("p54 native apple export carries binding plan",
+                uiKitExport.contains("private let vuaBindingPlan: [[String: Any]]") &&
+                uiKitExport.contains("\"propertyName\": \"synthCutoff\"") &&
+                uiKitExport.contains("// VUA binding: action triggerAction"))
     }
 
     // MARK: Phase 52 — Build/Test mode and interaction preview engine
