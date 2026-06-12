@@ -17,7 +17,8 @@ public struct ImportCoordinator: Sendable {
     }
 
     public func importCandidate(_ candidate: ExistingUIImport.Candidate) -> ExistingUIImport.Imported? {
-        ExistingUIImport.importCandidateEnsuringAnchors(candidate)
+        AppleUIImport.importCandidate(candidate)
+            ?? ExistingUIImport.importCandidateEnsuringAnchors(candidate)
             ?? WebUIImport.importCandidate(candidate)
     }
 }

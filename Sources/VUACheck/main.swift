@@ -2470,21 +2470,91 @@ func runChecks() async {
         defer { try? fm.removeItem(at: uiKitRoot) }
         try """
         import UIKit
-        final class ViewController: UIViewController {}
+        final class MixerViewController: UIViewController {
+            override func viewDidLoad() {
+                super.viewDidLoad()
+                let panel = UIView()
+                panel.accessibilityIdentifier = "mixerPanel"
+                panel.frame = CGRect(x: 20, y: 20, width: 320, height: 180)
+                let titleLabel = UILabel()
+                titleLabel.text = "Mixer"
+                titleLabel.font = .systemFont(ofSize: 24)
+                titleLabel.accessibilityIdentifier = "titleLabel"
+                titleLabel.frame = CGRect(x: 16, y: 16, width: 180, height: 32)
+                let playButton = UIButton(type: .system)
+                playButton.setTitle("Play", for: .normal)
+                playButton.accessibilityIdentifier = "playButton"
+                playButton.frame = CGRect(x: 16, y: 64, width: 120, height: 44)
+                let gainSlider = UISlider()
+                gainSlider.accessibilityIdentifier = "gainSlider"
+                gainSlider.frame = CGRect(x: 16, y: 120, width: 220, height: 32)
+                let bypassSwitch = UISwitch()
+                bypassSwitch.accessibilityIdentifier = "bypassSwitch"
+                bypassSwitch.frame = CGRect(x: 250, y: 116, width: 52, height: 32)
+                view.addSubview(panel)
+                panel.addSubview(titleLabel)
+                panel.addSubview(playButton)
+                panel.addSubview(gainSlider)
+                panel.addSubview(bypassSwitch)
+            }
+        }
         """.data(using: .utf8)!.write(to: uiKitRoot.appendingPathComponent("ViewController.swift"))
         let uiKitSummary = detector.detect(root: uiKitRoot)
+        let uiKitImported = uiKitSummary.candidates.first.flatMap { coordinator.importCandidate($0) }
+        let uiKitLayers = uiKitImported?.view.roots.flatMap { $0.flattened() } ?? []
         c.check("p39 detects UIKit", uiKitSummary.framework == .uiKit)
-        c.check("p39 UIKit is coming soon", uiKitSummary.implementationState == .comingSoon && uiKitSummary.rating == .red)
+        c.check("p62 UIKit static view import",
+                uiKitSummary.implementationState == .implemented &&
+                uiKitSummary.rating == .yellow &&
+                uiKitLayers.contains { $0.binding?.anchorID == "mixerPanel" && $0.kind.isGroupLike && $0.frame.width == 320 } &&
+                uiKitLayers.contains { $0.binding?.anchorID == "titleLabel" && $0.kind == .label && $0.text == "Mixer" } &&
+                uiKitLayers.contains { $0.binding?.anchorID == "playButton" && $0.kind == .button && $0.text == "Play" } &&
+                uiKitLayers.contains { $0.binding?.anchorID == "gainSlider" && $0.kind == .slider } &&
+                uiKitLayers.contains { $0.binding?.anchorID == "bypassSwitch" && $0.kind == .toggle })
 
         let appKitRoot = try makeProject("appkit")
         defer { try? fm.removeItem(at: appKitRoot) }
         try """
         import AppKit
-        final class WindowController: NSWindowController {}
+        final class MixerViewController: NSViewController {
+            override func viewDidLoad() {
+                super.viewDidLoad()
+                let panel = NSView()
+                panel.identifier = NSUserInterfaceItemIdentifier("mixerPanel")
+                panel.frame = NSRect(x: 24, y: 24, width: 360, height: 190)
+                let titleField = NSTextField(labelWithString: "Mixer")
+                titleField.identifier = .init("titleField")
+                titleField.font = NSFont.systemFont(ofSize: 22)
+                titleField.frame = NSRect(x: 18, y: 142, width: 180, height: 28)
+                let playButton = NSButton(title: "Play", target: nil, action: nil)
+                playButton.identifier = .init("playButton")
+                playButton.frame = NSRect(x: 18, y: 86, width: 120, height: 38)
+                let gainSlider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
+                gainSlider.identifier = NSUserInterfaceItemIdentifier("gainSlider")
+                gainSlider.frame = NSRect(x: 18, y: 42, width: 220, height: 24)
+                let bypassSwitch = NSSwitch()
+                bypassSwitch.identifier = .init("bypassSwitch")
+                bypassSwitch.frame = NSRect(x: 260, y: 82, width: 80, height: 32)
+                view.addSubview(panel)
+                panel.addSubview(titleField)
+                panel.addSubview(playButton)
+                panel.addSubview(gainSlider)
+                panel.addSubview(bypassSwitch)
+            }
+        }
         """.data(using: .utf8)!.write(to: appKitRoot.appendingPathComponent("WindowController.swift"))
         let appKitSummary = detector.detect(root: appKitRoot)
+        let appKitImported = appKitSummary.candidates.first.flatMap { coordinator.importCandidate($0) }
+        let appKitLayers = appKitImported?.view.roots.flatMap { $0.flattened() } ?? []
         c.check("p39 detects AppKit", appKitSummary.framework == .appKit)
-        c.check("p39 AppKit is coming soon", appKitSummary.implementationState == .comingSoon && appKitSummary.rating == .red)
+        c.check("p62 AppKit static view import",
+                appKitSummary.implementationState == .implemented &&
+                appKitSummary.rating == .yellow &&
+                appKitLayers.contains { $0.binding?.anchorID == "mixerPanel" && $0.kind.isGroupLike && $0.frame.width == 360 } &&
+                appKitLayers.contains { $0.binding?.anchorID == "titleField" && $0.kind == .label && $0.text == "Mixer" } &&
+                appKitLayers.contains { $0.binding?.anchorID == "playButton" && $0.kind == .button && $0.text == "Play" } &&
+                appKitLayers.contains { $0.binding?.anchorID == "gainSlider" && $0.kind == .slider } &&
+                appKitLayers.contains { $0.binding?.anchorID == "bypassSwitch" && $0.kind == .toggle })
 
         let reactRoot = try makeProject("react")
         defer { try? fm.removeItem(at: reactRoot) }
