@@ -86,6 +86,48 @@ final class InteractionPreviewEngineTests: XCTestCase {
         XCTAssertEqual(InteractionPreviewEngine.displayString(-18, profile: try XCTUnwrap(ControlBehaviourResolver.profile(for: meter))), "-18.0 dB")
     }
 
+    func testMeterDemoModesAndDisplayReadouts() throws {
+        let stereo = Layer(name: "Stereo Output", kind: .meter,
+                           control: ControlMetadata(parameterID: "stereo_out", minValue: -60, maxValue: 0,
+                                                    defaultValue: -18, unit: .decibels,
+                                                    behaviourType: ControlBehaviourType.meterReadout.rawValue,
+                                                    interactionMode: ControlInteractionMode.readOnly.rawValue,
+                                                    demoMode: ControlMeterDemoMode.stereo.rawValue,
+                                                    demoAnimationEnabled: true))
+        let stereoValues = InteractionPreviewEngine.demoMeterValues(for: stereo, time: 1.25)
+        XCTAssertEqual(stereoValues.count, 2)
+        XCTAssertTrue(stereoValues.allSatisfy { (-60...0).contains($0) })
+
+        var state = InteractionPreviewState(mode: .test)
+        InteractionPreviewEngine.setValue(stereoValues[0], for: stereo, in: &state)
+        let stereoPreview = try XCTUnwrap(InteractionPreviewEngine.previewResult(for: stereo, state: state))
+        XCTAssertNotNil(stereoPreview.secondaryNormalizedValue)
+        XCTAssertEqual(stereoPreview.modeLabel, "Stereo")
+
+        let statusDisplay = Layer(name: "Transport Status", kind: .text,
+                                  control: ControlMetadata(parameterID: "transport_status", displayName: "Transport",
+                                                           minValue: 0, maxValue: 1, defaultValue: 0,
+                                                           behaviourType: ControlBehaviourType.valueDisplay.rawValue,
+                                                           interactionMode: ControlInteractionMode.readOnly.rawValue,
+                                                           displayMode: ControlDisplayMode.statusText.rawValue,
+                                                           demoAnimationEnabled: false,
+                                                           statusText: "Ready"))
+        XCTAssertTrue(InteractionPreviewEngine.supportsInteraction(statusDisplay))
+        let statusPreview = try XCTUnwrap(InteractionPreviewEngine.previewResult(for: statusDisplay, state: .init(mode: .test)))
+        XCTAssertEqual(statusPreview.displayText, "Ready")
+        XCTAssertEqual(statusPreview.modeLabel, "Status Text")
+
+        let progressDisplay = Layer(name: "CPU", kind: .text,
+                                    control: ControlMetadata(parameterID: "cpu", displayName: "CPU",
+                                                             minValue: 0, maxValue: 100, defaultValue: 25,
+                                                             unit: .percent,
+                                                             behaviourType: ControlBehaviourType.valueDisplay.rawValue,
+                                                             interactionMode: ControlInteractionMode.readOnly.rawValue,
+                                                             demoMode: ControlMeterDemoMode.progress.rawValue,
+                                                             displayMode: ControlDisplayMode.valueReadout.rawValue))
+        XCTAssertEqual(InteractionPreviewEngine.demoMeterValue(for: progressDisplay, time: 2), 50)
+    }
+
     func testPreviewDiagnosticsAndGeneratedBindings() throws {
         let invalid = Layer(name: "Bad", kind: .slider,
                             frame: VRect(x: 0, y: 0, width: 20, height: 120),
@@ -105,6 +147,36 @@ final class InteractionPreviewEngineTests: XCTestCase {
         XCTAssertTrue(source.contains("@State private var vua_viewModel_cutoff_"))
         XCTAssertTrue(source.contains("KnobView(value: $vua_viewModel_cutoff_"))
         XCTAssertTrue(source.contains("// Binding target: viewModel.cutoff"))
+    }
+
+    func testDisplayDiagnosticsAndGeneratedSwiftUIReadout() throws {
+        let invalidDisplay = Layer(name: "Display", kind: .text,
+                                   control: ControlMetadata(parameterID: "display", minValue: 0, maxValue: 100,
+                                                            defaultValue: 10,
+                                                            behaviourType: ControlBehaviourType.valueDisplay.rawValue,
+                                                            interactionMode: ControlInteractionMode.linearDrag.rawValue,
+                                                            demoMode: "unknownMode"))
+        let issueCodes = ControlBehaviourDiagnostics.validatePreview(invalidDisplay).map(\.code)
+        XCTAssertTrue(issueCodes.contains(.displayMustBeReadOnly))
+        XCTAssertTrue(issueCodes.contains(.invalidDemoMode))
+        XCTAssertTrue(issueCodes.contains(.missingBinding))
+        XCTAssertEqual(InteractionPreviewEngine.status(for: invalidDisplay), .partiallyFunctional)
+
+        var display = Layer(name: "CPU", kind: .text,
+                            control: ControlMetadata(parameterID: "cpu", displayName: "CPU",
+                                                     minValue: 0, maxValue: 100, defaultValue: 42,
+                                                     unit: .percent,
+                                                     behaviourType: ControlBehaviourType.valueDisplay.rawValue,
+                                                     interactionMode: ControlInteractionMode.readOnly.rawValue,
+                                                     bindingName: "viewModel.cpu",
+                                                     demoMode: ControlMeterDemoMode.progress.rawValue,
+                                                     displayMode: ControlDisplayMode.valueReadout.rawValue))
+        display.text = "CPU"
+        let source = try CodeGenService().generate(Document(name: "Generated", roots: [display])).contents
+        XCTAssertTrue(source.contains("@State private var vua_viewModel_cpu_"))
+        XCTAssertTrue(source.contains("Text([\"CPU\", \"\\(vua_viewModel_cpu_"))
+        XCTAssertTrue(source.contains("// Demo mode: Progress, animation enabled"))
+        XCTAssertTrue(source.contains("// Display mode: Value Readout"))
     }
 
     private func knob(defaultValue: Double) -> Layer {

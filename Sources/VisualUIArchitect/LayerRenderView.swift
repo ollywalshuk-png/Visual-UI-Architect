@@ -36,7 +36,7 @@ struct LayerRenderView: View {
             }
             .scaleEffect(pressed ? 0.97 : 1)
         case .label, .text:
-            Text(layer.text ?? layer.name)
+            Text(preview?.displayText ?? layer.text ?? layer.name)
                 .font(textFont)
                 .foregroundStyle(layer.style.foregroundColor?.swiftUI ?? .primary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -246,13 +246,25 @@ struct LayerRenderView: View {
 
     private var meterView: some View {
         let pos = preview?.normalizedValue ?? 0.65
+        let secondary = preview?.secondaryNormalizedValue
         return GeometryReader { geo in
-            ZStack(alignment: .bottom) {
-                RoundedRectangle(cornerRadius: 3).fill(Color.black.opacity(0.5))
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(LinearGradient(colors: [.green, .yellow, .red], startPoint: .bottom, endPoint: .top))
-                    .frame(height: geo.size.height * pos)
+            HStack(spacing: secondary == nil ? 0 : 3) {
+                meterBar(pos, size: geo.size).frame(maxWidth: .infinity)
+                if let secondary {
+                    meterBar(secondary, size: geo.size).frame(maxWidth: .infinity)
+                }
             }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+
+    private func meterBar(_ value: Double, size: CGSize) -> some View {
+        let clamped = min(1, max(0, value))
+        return ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 3).fill(Color.black.opacity(0.5))
+            RoundedRectangle(cornerRadius: 3)
+                .fill(LinearGradient(colors: [.green, .yellow, .red], startPoint: .bottom, endPoint: .top))
+                .frame(height: size.height * clamped)
         }
     }
 

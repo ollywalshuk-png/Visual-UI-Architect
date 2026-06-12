@@ -11,6 +11,7 @@ public enum ControlBehaviourType: String, Codable, CaseIterable, Hashable, Senda
     case buttonPress
     case toggleSwitch
     case meterReadout
+    case valueDisplay
 
     public var displayName: String {
         switch self {
@@ -23,6 +24,45 @@ public enum ControlBehaviourType: String, Codable, CaseIterable, Hashable, Senda
         case .buttonPress: return "Button Press"
         case .toggleSwitch: return "Toggle / Switch"
         case .meterReadout: return "Meter Readout"
+        case .valueDisplay: return "Value Display"
+        }
+    }
+}
+
+public enum ControlMeterDemoMode: String, Codable, CaseIterable, Hashable, Sendable {
+    case peak
+    case rms
+    case vu
+    case lufs
+    case gainReduction
+    case stereo
+    case progress
+
+    public var displayName: String {
+        switch self {
+        case .peak: return "Peak"
+        case .rms: return "RMS"
+        case .vu: return "VU"
+        case .lufs: return "LUFS"
+        case .gainReduction: return "Gain Reduction"
+        case .stereo: return "Stereo"
+        case .progress: return "Progress"
+        }
+    }
+}
+
+public enum ControlDisplayMode: String, Codable, CaseIterable, Hashable, Sendable {
+    case valueReadout
+    case statusText
+    case presetName
+    case spectrumMock
+
+    public var displayName: String {
+        switch self {
+        case .valueReadout: return "Value Readout"
+        case .statusText: return "Status Text"
+        case .presetName: return "Preset Name"
+        case .spectrumMock: return "Spectrum Mock"
         }
     }
 }
@@ -73,6 +113,10 @@ public struct ControlBehaviourProfile: Codable, Hashable, Sendable {
     public var midiCC: Int?
     public var auParameterID: String?
     public var automationEnabled: Bool
+    public var meterDemoMode: ControlMeterDemoMode
+    public var displayMode: ControlDisplayMode
+    public var demoAnimationEnabled: Bool
+    public var statusText: String?
 
     public init(type: ControlBehaviourType, interactionMode: ControlInteractionMode,
                 dragAxis: ControlDragAxis, rotationStartDegrees: Double = -135,
@@ -83,7 +127,11 @@ public struct ControlBehaviourProfile: Codable, Hashable, Sendable {
                 snapBehaviour: ControlSnapBehaviour = .none,
                 displayFormatter: String = "{value}", bindingName: String? = nil,
                 parameterID: String = "value", midiCC: Int? = nil,
-                auParameterID: String? = nil, automationEnabled: Bool = false) {
+                auParameterID: String? = nil, automationEnabled: Bool = false,
+                meterDemoMode: ControlMeterDemoMode = .peak,
+                displayMode: ControlDisplayMode = .valueReadout,
+                demoAnimationEnabled: Bool = true,
+                statusText: String? = nil) {
         self.type = type
         self.interactionMode = interactionMode
         self.dragAxis = dragAxis
@@ -104,6 +152,10 @@ public struct ControlBehaviourProfile: Codable, Hashable, Sendable {
         self.midiCC = midiCC
         self.auParameterID = auParameterID
         self.automationEnabled = automationEnabled
+        self.meterDemoMode = meterDemoMode
+        self.displayMode = displayMode
+        self.demoAnimationEnabled = demoAnimationEnabled
+        self.statusText = statusText
     }
 
     public func clamped(_ value: Double) -> Double {
@@ -156,7 +208,11 @@ public enum ControlBehaviourResolver {
             parameterID: control.parameterID,
             midiCC: control.midiCC,
             auParameterID: control.auParameterID,
-            automationEnabled: control.automationEnabled ?? false)
+            automationEnabled: control.automationEnabled ?? false,
+            meterDemoMode: ControlMeterDemoMode(rawValue: control.demoMode ?? "") ?? defaultMeterDemoMode(for: layer, type: type),
+            displayMode: ControlDisplayMode(rawValue: control.displayMode ?? "") ?? defaultDisplayMode(for: layer),
+            demoAnimationEnabled: control.demoAnimationEnabled ?? defaultDemoAnimation(type: type),
+            statusText: control.statusText)
     }
 
     public static func defaultMetadata(for kind: LayerKind, name: String) -> ControlMetadata? {
@@ -200,7 +256,9 @@ public enum ControlBehaviourResolver {
             return ControlMetadata(parameterID: "level", displayName: name,
                                    minValue: -60, maxValue: 0, defaultValue: -18,
                                    unit: .decibels, behaviourType: ControlBehaviourType.meterReadout.rawValue,
-                                   interactionMode: ControlInteractionMode.readOnly.rawValue)
+                                   interactionMode: ControlInteractionMode.readOnly.rawValue,
+                                   demoMode: ControlMeterDemoMode.peak.rawValue,
+                                   demoAnimationEnabled: true)
         default:
             return nil
         }
@@ -221,6 +279,9 @@ public enum ControlBehaviourResolver {
         case .button: return .buttonPress
         case .toggle: return .toggleSwitch
         case .meter: return .meterReadout
+        case .text, .label:
+            if layer.control != nil { return .valueDisplay }
+            return .horizontalSlider
         default: return .horizontalSlider
         }
     }
@@ -235,7 +296,7 @@ public enum ControlBehaviourResolver {
         case .verticalFader, .horizontalSlider: return .linearDrag
         case .buttonPress: return .press
         case .toggleSwitch: return .toggle
-        case .meterReadout: return .readOnly
+        case .meterReadout, .valueDisplay: return .readOnly
         }
     }
 
@@ -245,14 +306,14 @@ public enum ControlBehaviourResolver {
         case .endlessEncoder: return .circular
         case .verticalFader: return .vertical
         case .horizontalSlider: return .horizontal
-        case .buttonPress, .toggleSwitch, .meterReadout: return .none
+        case .buttonPress, .toggleSwitch, .meterReadout, .valueDisplay: return .none
         }
     }
 
     private static func defaultRotation(_ type: ControlBehaviourType) -> (Double, Double) {
         switch type {
         case .endlessEncoder: return (-180, 180)
-        case .buttonPress, .toggleSwitch, .meterReadout, .verticalFader, .horizontalSlider: return (0, 0)
+        case .buttonPress, .toggleSwitch, .meterReadout, .valueDisplay, .verticalFader, .horizontalSlider: return (0, 0)
         default: return (-135, 135)
         }
     }
@@ -260,14 +321,16 @@ public enum ControlBehaviourResolver {
     private static func defaultCurve(for type: ControlBehaviourType) -> ControlResponseCurve {
         switch type {
         case .bipolarKnob: return .bipolar
-        default: return .linear
+        case .rotaryKnob, .endlessEncoder, .steppedKnob, .verticalFader, .horizontalSlider,
+             .buttonPress, .toggleSwitch, .meterReadout, .valueDisplay:
+            return .linear
         }
     }
 
     private static func isContinuous(type: ControlBehaviourType, control: ControlMetadata) -> Bool {
         switch type {
         case .buttonPress, .toggleSwitch, .steppedKnob: return false
-        case .meterReadout: return true
+        case .meterReadout, .valueDisplay: return true
         default: return control.isContinuous
         }
     }
@@ -276,6 +339,7 @@ public enum ControlBehaviourResolver {
         switch type {
         case .buttonPress, .toggleSwitch: return control.stepCount ?? 2
         case .steppedKnob: return control.stepCount ?? 12
+        case .valueDisplay, .meterReadout: return nil
         default: return control.stepCount
         }
     }
@@ -284,12 +348,39 @@ public enum ControlBehaviourResolver {
         switch type {
         case .buttonPress, .toggleSwitch, .steppedKnob: return .step
         case .bipolarKnob: return .center
-        default: return .none
+        case .valueDisplay, .meterReadout, .rotaryKnob, .endlessEncoder, .verticalFader, .horizontalSlider:
+            return .none
         }
     }
 
     private static func formatter(for control: ControlMetadata) -> String {
         control.unit.symbol.isEmpty ? "{value}" : "{value} \(control.unit.symbol)"
+    }
+
+    private static func defaultMeterDemoMode(for layer: Layer, type: ControlBehaviourType) -> ControlMeterDemoMode {
+        let text = "\(layer.name) \(layer.text ?? "") \(layer.control?.displayName ?? "")".lowercased()
+        if text.contains("stereo") { return .stereo }
+        if text.contains("gain reduction") || text.contains("gr ") || text.hasPrefix("gr") { return .gainReduction }
+        if text.contains("lufs") { return .lufs }
+        if text.contains("rms") { return .rms }
+        if text.contains("vu") { return .vu }
+        if type == .valueDisplay && (text.contains("progress") || layer.control?.unit == .percent) { return .progress }
+        return .peak
+    }
+
+    private static func defaultDisplayMode(for layer: Layer) -> ControlDisplayMode {
+        let text = "\(layer.name) \(layer.text ?? "") \(layer.control?.displayName ?? "")".lowercased()
+        if text.contains("status") { return .statusText }
+        if text.contains("preset") { return .presetName }
+        if text.contains("spectrum") { return .spectrumMock }
+        return .valueReadout
+    }
+
+    private static func defaultDemoAnimation(type: ControlBehaviourType) -> Bool {
+        switch type {
+        case .meterReadout, .valueDisplay: return true
+        default: return false
+        }
     }
 }
 
@@ -307,6 +398,8 @@ public enum ControlBehaviourDiagnostics {
         case geometryMismatch
         case unsupportedBehaviour
         case writeableMeter
+        case displayMustBeReadOnly
+        case invalidDemoMode
         case interactionBlocked
     }
 
@@ -339,6 +432,12 @@ public enum ControlBehaviourDiagnostics {
         }
         if profile.type == .meterReadout && profile.interactionMode != .readOnly {
             out.append(Issue(code: .meterMustBeReadOnly, message: "'\(layer.name)' meter behaviour must be read-only.", layerID: layer.id))
+        }
+        if profile.type == .valueDisplay && profile.interactionMode != .readOnly {
+            out.append(Issue(code: .displayMustBeReadOnly, message: "'\(layer.name)' display behaviour must be read-only.", layerID: layer.id))
+        }
+        if let raw = control.demoMode, ControlMeterDemoMode(rawValue: raw) == nil {
+            out.append(Issue(code: .invalidDemoMode, message: "'\(layer.name)' has an unknown demo mode '\(raw)'.", layerID: layer.id))
         }
         if profile.rotationEndDegrees < profile.rotationStartDegrees {
             out.append(Issue(code: .invalidRotation, message: "'\(layer.name)' rotation end is before start.", layerID: layer.id))

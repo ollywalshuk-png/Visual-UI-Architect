@@ -210,6 +210,12 @@ public struct ControlMetadata: Codable, Hashable, Sendable {
     public var automationEnabled: Bool?
     public var rotationStartDegrees: Double?
     public var rotationEndDegrees: Double?
+    /// Optional Test Mode demo/display metadata. Missing keys decode as nil in
+    /// older documents and are resolved by ControlBehaviourEngine defaults.
+    public var demoMode: String?
+    public var displayMode: String?
+    public var demoAnimationEnabled: Bool?
+    public var statusText: String?
 
     public init(
         parameterID: String,
@@ -228,7 +234,11 @@ public struct ControlMetadata: Codable, Hashable, Sendable {
         auParameterID: String? = nil,
         automationEnabled: Bool? = nil,
         rotationStartDegrees: Double? = nil,
-        rotationEndDegrees: Double? = nil
+        rotationEndDegrees: Double? = nil,
+        demoMode: String? = nil,
+        displayMode: String? = nil,
+        demoAnimationEnabled: Bool? = nil,
+        statusText: String? = nil
     ) {
         self.parameterID = parameterID
         self.displayName = displayName ?? parameterID
@@ -247,6 +257,10 @@ public struct ControlMetadata: Codable, Hashable, Sendable {
         self.automationEnabled = automationEnabled
         self.rotationStartDegrees = rotationStartDegrees
         self.rotationEndDegrees = rotationEndDegrees
+        self.demoMode = demoMode
+        self.displayMode = displayMode
+        self.demoAnimationEnabled = demoAnimationEnabled
+        self.statusText = statusText
     }
 
     /// Clamps a value to the parameter's range.

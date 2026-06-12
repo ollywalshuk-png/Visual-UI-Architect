@@ -67,6 +67,7 @@ public enum ControlBehaviourHint: String, CaseIterable, Hashable, Sendable {
     case buttonPress
     case toggleSwitch
     case meterReadout
+    case valueDisplay
 
     public var displayName: String {
         switch self {
@@ -79,6 +80,7 @@ public enum ControlBehaviourHint: String, CaseIterable, Hashable, Sendable {
         case .buttonPress: return "Button press"
         case .toggleSwitch: return "Toggle switch"
         case .meterReadout: return "Meter readout"
+        case .valueDisplay: return "Value display"
         }
     }
 }
@@ -172,6 +174,10 @@ public struct ControlAsset: Identifiable, Hashable, Sendable {
         control?.rotationStartDegrees = rotation?.minDegrees
         control?.rotationEndDegrees = rotation?.maxDegrees
         control?.automationEnabled = metadata.binding.automationEnabled
+        control?.demoMode = demoMode
+        control?.displayMode = displayMode
+        control?.demoAnimationEnabled = demoAnimationEnabled
+        control?.statusText = statusText
         return Layer(
             name: name,
             kind: category.layerKind,
@@ -231,7 +237,7 @@ public struct ControlAsset: Identifiable, Hashable, Sendable {
         case .verticalFader: return .verticalDrag
         case .horizontalSlider: return .horizontalDrag
         case .buttonPress, .toggleSwitch: return .tap
-        case .meterReadout: return .none
+        case .meterReadout, .valueDisplay: return .none
         }
     }
 
@@ -246,6 +252,7 @@ public struct ControlAsset: Identifiable, Hashable, Sendable {
         case .buttonPress: return "buttonPress"
         case .toggleSwitch: return "toggleSwitch"
         case .meterReadout: return "meterReadout"
+        case .valueDisplay: return "valueDisplay"
         }
     }
 
@@ -258,8 +265,46 @@ public struct ControlAsset: Identifiable, Hashable, Sendable {
         case .verticalFader, .horizontalSlider: return "linearDrag"
         case .buttonPress: return "press"
         case .toggleSwitch: return "toggle"
-        case .meterReadout: return "readOnly"
+        case .meterReadout, .valueDisplay: return "readOnly"
         }
+    }
+
+    private var demoMode: String? {
+        switch category {
+        case .meter:
+            if name.localizedCaseInsensitiveContains("stereo") { return "stereo" }
+            if name.localizedCaseInsensitiveContains("VU") { return "vu" }
+            if name.localizedCaseInsensitiveContains("RMS") { return "rms" }
+            return "peak"
+        case .display:
+            if name.localizedCaseInsensitiveContains("spectrum") { return "rms" }
+            if name.localizedCaseInsensitiveContains("preset") { return nil }
+            return "progress"
+        default:
+            return nil
+        }
+    }
+
+    private var displayMode: String? {
+        guard category == .display else { return nil }
+        if name.localizedCaseInsensitiveContains("spectrum") { return "spectrumMock" }
+        if name.localizedCaseInsensitiveContains("preset") { return "presetName" }
+        if name.localizedCaseInsensitiveContains("status") { return "statusText" }
+        return "valueReadout"
+    }
+
+    private var demoAnimationEnabled: Bool? {
+        switch category {
+        case .meter, .display: return true
+        default: return nil
+        }
+    }
+
+    private var statusText: String? {
+        guard category == .display else { return nil }
+        if name.localizedCaseInsensitiveContains("preset") { return "Init Preset" }
+        if name.localizedCaseInsensitiveContains("status") { return "Ready" }
+        return nil
     }
 
     private var responseCurve: String {
@@ -414,7 +459,9 @@ public enum ControlAssetLibrary {
         case .slider: return .horizontalSlider
         case .button: return .buttonPress
         case .toggle: return .toggleSwitch
-        case .meter, .display, .panel: return .meterReadout
+        case .meter: return .meterReadout
+        case .display: return .valueDisplay
+        case .panel: return .meterReadout
         }
     }
 

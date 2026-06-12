@@ -64,20 +64,22 @@ public struct InteractionPreviewState: Hashable, Sendable {
 public struct InteractionPreviewResult: Hashable, Sendable {
     public var value: Double
     public var normalizedValue: Double
+    public var secondaryNormalizedValue: Double?
     public var rotationDegrees: Double?
     public var displayText: String
+    public var modeLabel: String?
     public var isActive: Bool
 }
 
 public enum InteractionPreviewEngine {
     public static func status(for layer: Layer) -> InteractionFunctionalStatus {
-        guard supportsInteraction(layer.kind) else { return .visualOnly }
+        guard supportsInteraction(layer) else { return .visualOnly }
         guard let profile = ControlBehaviourResolver.profile(for: layer) else { return .missingBehaviour }
-        let issues = ControlBehaviourDiagnostics.validate(layer)
-        if issues.contains(where: { [.invalidRange, .defaultOutOfRange, .invalidRotation, .meterMustBeReadOnly].contains($0.code) }) {
+        let issues = ControlBehaviourDiagnostics.validatePreview(layer)
+        if issues.contains(where: { [.invalidRange, .defaultOutOfRange, .invalidRotation, .meterMustBeReadOnly, .displayMustBeReadOnly, .invalidDemoMode].contains($0.code) }) {
             return .partiallyFunctional
         }
-        if profile.bindingName == nil || profile.bindingName?.isEmpty == true {
+        if profile.bindingName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
             return .partiallyFunctional
         }
         return .functional
@@ -92,6 +94,12 @@ public enum InteractionPreviewEngine {
         }
     }
 
+    public static func supportsInteraction(_ layer: Layer) -> Bool {
+        if supportsInteraction(layer.kind) { return true }
+        guard let profile = ControlBehaviourResolver.profile(for: layer) else { return false }
+        return profile.type == .valueDisplay
+    }
+
     public static func defaultValue(for layer: Layer) -> Double? {
         ControlBehaviourResolver.profile(for: layer)?.defaultValue
     }
@@ -102,8 +110,10 @@ public enum InteractionPreviewEngine {
         return InteractionPreviewResult(
             value: value,
             normalizedValue: ControlBehaviourMath.normalize(value, min: profile.minValue, max: profile.maxValue),
+            secondaryNormalizedValue: secondaryNormalizedValue(for: layer, state: state, profile: profile),
             rotationDegrees: rotationDegrees(for: value, profile: profile),
             displayText: displayString(value, profile: profile),
+            modeLabel: modeLabel(for: profile),
             isActive: state.activeLayerID == layer.id)
     }
 
@@ -172,13 +182,28 @@ public enum InteractionPreviewEngine {
     }
 
     public static func demoMeterValue(for layer: Layer, time: Double, phase: Double = 0) -> Double? {
-        guard let profile = ControlBehaviourResolver.profile(for: layer), profile.type == .meterReadout else { return nil }
-        let wave = (sin(time * 1.7 + phase) + 1) / 2
-        let shaped = pow(wave, 1.7)
-        return value(fromNormalized: shaped, profile: profile)
+        demoMeterValues(for: layer, time: time, phase: phase).first
+    }
+
+    public static func demoMeterValues(for layer: Layer, time: Double, phase: Double = 0) -> [Double] {
+        guard let profile = ControlBehaviourResolver.profile(for: layer),
+              [.meterReadout, .valueDisplay].contains(profile.type) else { return [] }
+        guard profile.demoAnimationEnabled else { return [profile.defaultValue] }
+        let normalized = demoNormalizedValues(mode: profile.meterDemoMode, time: time, phase: phase)
+        return normalized.map { value(fromNormalized: $0, profile: profile) }
     }
 
     public static func displayString(_ value: Double, profile: ControlBehaviourProfile) -> String {
+        switch profile.displayMode {
+        case .statusText:
+            return profile.statusText?.isEmpty == false ? profile.statusText! : "Ready"
+        case .presetName:
+            return profile.statusText?.isEmpty == false ? profile.statusText! : "Init Preset"
+        case .spectrumMock:
+            return "Spectrum \(Int(ControlBehaviourMath.normalize(value, min: profile.minValue, max: profile.maxValue) * 100))%"
+        case .valueReadout:
+            break
+        }
         let formatted: String
         if abs(value) >= 100 {
             formatted = String(format: "%.0f", value)
@@ -202,12 +227,54 @@ public enum InteractionPreviewEngine {
         let value = ControlBehaviourMath.denormalize(clamped, min: profile.minValue, max: profile.maxValue)
         return profile.clamped(value)
     }
+
+    private static func demoNormalizedValues(mode: ControlMeterDemoMode, time: Double, phase: Double) -> [Double] {
+        func wave(_ speed: Double, _ offset: Double = 0, power: Double = 1.7) -> Double {
+            let value = (sin(time * speed + phase + offset) + 1) / 2
+            return pow(value, power)
+        }
+        switch mode {
+        case .peak:
+            return [wave(1.7)]
+        case .rms:
+            return [0.18 + wave(0.9, power: 2.2) * 0.58]
+        case .vu:
+            return [0.28 + wave(0.55, power: 1.2) * 0.48]
+        case .lufs:
+            return [0.22 + wave(0.35, power: 1.5) * 0.36]
+        case .gainReduction:
+            return [1 - (0.18 + wave(1.15, power: 2.0) * 0.62)]
+        case .stereo:
+            return [wave(1.45), wave(1.63, 0.8)]
+        case .progress:
+            return [time.truncatingRemainder(dividingBy: 4) / 4]
+        }
+    }
+
+    private static func secondaryNormalizedValue(for layer: Layer, state: InteractionPreviewState, profile: ControlBehaviourProfile) -> Double? {
+        guard profile.meterDemoMode == .stereo,
+              [.meterReadout, .valueDisplay].contains(profile.type),
+              let value = state.values[layer.id] else { return nil }
+        let primary = ControlBehaviourMath.normalize(value, min: profile.minValue, max: profile.maxValue)
+        return min(1, max(0, primary * 0.82 + 0.08))
+    }
+
+    private static func modeLabel(for profile: ControlBehaviourProfile) -> String? {
+        switch profile.type {
+        case .meterReadout:
+            return profile.meterDemoMode.displayName
+        case .valueDisplay:
+            return profile.displayMode.displayName
+        default:
+            return nil
+        }
+    }
 }
 
 public extension ControlBehaviourDiagnostics {
     static func validatePreview(_ layer: Layer) -> [Issue] {
         var out = validate(layer)
-        guard InteractionPreviewEngine.supportsInteraction(layer.kind) else { return out }
+        guard InteractionPreviewEngine.supportsInteraction(layer) else { return out }
         guard let profile = ControlBehaviourResolver.profile(for: layer) else { return out }
         if profile.bindingName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
             out.append(Issue(code: .missingBinding, message: "'\(layer.name)' has no generated binding target.", layerID: layer.id))
@@ -219,6 +286,8 @@ public extension ControlBehaviourDiagnostics {
             out.append(Issue(code: .geometryMismatch, message: "'\(layer.name)' is vertical but wider than it is tall.", layerID: layer.id))
         case .meterReadout where profile.interactionMode != .readOnly:
             out.append(Issue(code: .writeableMeter, message: "'\(layer.name)' meter should be read-only in Test Mode.", layerID: layer.id))
+        case .valueDisplay where profile.interactionMode != .readOnly:
+            out.append(Issue(code: .displayMustBeReadOnly, message: "'\(layer.name)' display should be read-only in Test Mode.", layerID: layer.id))
         default:
             break
         }

@@ -1785,6 +1785,21 @@ func runChecks() async {
                 ControlAssetLibrary.assets(in: .meter).allSatisfy {
                     $0.behaviour == .meterReadout && $0.metadata.interaction == .none
                 })
+        c.check("p53 display assets are value displays",
+                ControlAssetLibrary.assets(in: .display).allSatisfy {
+                    $0.behaviour == .valueDisplay &&
+                    $0.makeLayer().control?.behaviourType == ControlBehaviourType.valueDisplay.rawValue &&
+                    InteractionPreviewEngine.supportsInteraction($0.makeLayer())
+                })
+        if let stereoMeter = ControlAssetLibrary.search("stereo", in: .meter).first?.makeLayer() {
+            let demo = InteractionPreviewEngine.demoMeterValues(for: stereoMeter, time: 1.5)
+            c.check("p53 stereo meter demo produces two lanes",
+                    stereoMeter.control?.demoMode == ControlMeterDemoMode.stereo.rawValue &&
+                    demo.count == 2 &&
+                    demo.allSatisfy { (stereoMeter.control!.minValue...stereoMeter.control!.maxValue).contains($0) })
+        } else {
+            c.check("p53 stereo meter demo produces two lanes", false)
+        }
 
         let sampleLayers = ControlAssetCategory.allCases.compactMap {
             ControlAssetLibrary.assets(in: $0).first?.makeLayer(at: .zero)
@@ -1798,6 +1813,8 @@ func runChecks() async {
         c.check("p19 codegen includes toggle", src.contains("Toggle("))
         c.check("p19 codegen includes meter", src.contains("MeterView("))
         c.check("p42 codegen includes display/panel layers", src.contains("Text(") && src.contains("RoundedRectangle"))
+        c.check("p53 codegen carries display demo metadata",
+                src.contains("// Display mode:") && src.contains("// Demo mode:"))
         c.check("p19 generated SwiftUI braces balanced",
                 src.filter { $0 == "{" }.count == src.filter { $0 == "}" }.count)
 

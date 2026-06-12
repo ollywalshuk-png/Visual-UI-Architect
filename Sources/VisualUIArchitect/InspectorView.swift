@@ -62,7 +62,7 @@ struct InspectorView: View {
 
                 constraintsSection(layer)
 
-                if layer.kind.isPluginControl || InteractionPreviewEngine.supportsInteraction(layer.kind) {
+                if layer.kind.isPluginControl || InteractionPreviewEngine.supportsInteraction(layer) || layer.control != nil {
                     controlSection(layer)
                     behaviourSection(layer)
                 }
@@ -551,6 +551,9 @@ struct InspectorView: View {
             if let behaviour {
                 LabeledContent("Drag Axis") { Text(behaviour.dragAxis.rawValue.capitalized) }
                 LabeledContent("Snap") { Text(behaviour.snapBehaviour.rawValue.capitalized) }
+                if behaviour.type == .meterReadout || behaviour.type == .valueDisplay {
+                    LabeledContent("Demo") { Text(behaviour.meterDemoMode.displayName) }
+                }
             }
             LabeledContent("Type") {
                 Picker("", selection: Binding(
@@ -578,6 +581,37 @@ struct InspectorView: View {
                     ForEach(ControlResponseCurve.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
                 }
                 .labelsHidden()
+            }
+            if (behaviour?.type == .meterReadout || behaviour?.type == .valueDisplay) ||
+                c.behaviourType == ControlBehaviourType.meterReadout.rawValue ||
+                c.behaviourType == ControlBehaviourType.valueDisplay.rawValue {
+                LabeledContent("Demo Mode") {
+                    Picker("", selection: Binding(
+                        get: { ControlMeterDemoMode(rawValue: c.demoMode ?? "") ?? behaviour?.meterDemoMode ?? .peak },
+                        set: { v in store.updateSelectedControl { $0.demoMode = v.rawValue } })) {
+                        ForEach(ControlMeterDemoMode.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }
+                    .labelsHidden()
+                }
+                Toggle("Demo Animation", isOn: Binding(
+                    get: { c.demoAnimationEnabled ?? behaviour?.demoAnimationEnabled ?? true },
+                    set: { v in store.updateSelectedControl { $0.demoAnimationEnabled = v } }))
+            }
+            if (behaviour?.type == .valueDisplay) || c.behaviourType == ControlBehaviourType.valueDisplay.rawValue {
+                LabeledContent("Display Mode") {
+                    Picker("", selection: Binding(
+                        get: { ControlDisplayMode(rawValue: c.displayMode ?? "") ?? behaviour?.displayMode ?? .valueReadout },
+                        set: { v in store.updateSelectedControl { $0.displayMode = v.rawValue } })) {
+                        ForEach(ControlDisplayMode.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }
+                    .labelsHidden()
+                }
+                LabeledContent("Status Text") {
+                    TextField("Ready", text: Binding(
+                        get: { c.statusText ?? "" },
+                        set: { v in store.updateSelectedControl { $0.statusText = v.isEmpty ? nil : v } }))
+                    .textFieldStyle(.roundedBorder)
+                }
             }
             if c.behaviourType == ControlBehaviourType.rotaryKnob.rawValue ||
                 c.behaviourType == ControlBehaviourType.steppedKnob.rawValue ||
@@ -664,6 +698,14 @@ struct InspectorView: View {
         case .meterReadout:
             meta.isContinuous = true; meta.stepCount = nil
             meta.interactionMode = ControlInteractionMode.readOnly.rawValue
+            meta.demoMode = meta.demoMode ?? ControlMeterDemoMode.peak.rawValue
+            meta.demoAnimationEnabled = meta.demoAnimationEnabled ?? true
+        case .valueDisplay:
+            meta.isContinuous = true; meta.stepCount = nil
+            meta.interactionMode = ControlInteractionMode.readOnly.rawValue
+            meta.displayMode = meta.displayMode ?? ControlDisplayMode.valueReadout.rawValue
+            meta.demoMode = meta.demoMode ?? ControlMeterDemoMode.progress.rawValue
+            meta.demoAnimationEnabled = meta.demoAnimationEnabled ?? true
         }
     }
 
