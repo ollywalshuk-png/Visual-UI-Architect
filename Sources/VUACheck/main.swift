@@ -311,14 +311,22 @@ func runChecks() async {
 
     @Observable final class PlayerViewModel {
         var tracks: [Track] = []
+        var events: AsyncStream<PlayerEvent> { AsyncStream { _ in } }
         func load() async {}
+        func filter(_ query: String) {}
     }
     struct MasonryLayout: Layout {}
     struct SemanticScreen: View {
         @State private var path = NavigationPath()
         @Binding var enabled: Bool
+        @Environment(\.dismiss) private var dismiss
         @EnvironmentObject var session: SessionStore
+        @AppStorage("launchCount") private var launchCount = 0
+        @SceneStorage("selectedTab") private var selectedTab = "mix"
+        @FocusState private var focusedField: Field?
+        @State private var query = ""
         @StateObject private var viewModel = PlayerViewModel()
+        @Bindable var bindableModel: PlayerViewModel
 
         var body: some View {
             NavigationStack(path: $path) {
@@ -330,6 +338,10 @@ func runChecks() async {
                     .navigationDestination(for: Track.self) { track in DetailScreen(track: track) }
                     .sheet(isPresented: .constant(false)) { SettingsScreen() }
                     .task { await viewModel.load() }
+                    .onAppear { bindableModel.filter(query) }
+                    .onChange(of: query) { _, next in bindableModel.filter(next) }
+                    .onReceive(viewModel.events) { event in selectedTab = event.tab }
+                    .onSubmit { dismiss() }
                 }
             }
         }
@@ -366,6 +378,26 @@ func runChecks() async {
             semantic?.relationships.contains {
                 $0.kind == .modalPresentation && $0.source == "sheet" && $0.target == "SettingsScreen"
             } == true)
+    c.check("p59 semantic detects wrapper arguments and lifecycle hooks",
+            semantic?.properties.contains {
+                $0.name == "dismiss" && $0.wrappers.contains(.environment) && $0.wrapperArguments.contains("(\\.dismiss)")
+            } == true &&
+            semantic?.properties.contains {
+                $0.name == "launchCount" && $0.wrappers.contains(.appStorage) && $0.wrapperArguments.contains("(\"launchCount\")")
+            } == true &&
+            semantic?.properties.contains {
+                $0.name == "focusedField" && $0.wrappers.contains(.focusState)
+            } == true &&
+            semantic?.properties.contains {
+                $0.name == "bindableModel" && $0.wrappers.contains(.bindable) && $0.isViewModelLike
+            } == true &&
+            semantic?.lifecycleHooks.contains { $0.kind == "onChange" && $0.expression.contains("bindableModel.filter") } == true &&
+            semantic?.lifecycleHooks.contains { $0.kind == "onReceive" && $0.expression.contains("selectedTab") } == true &&
+            semantic?.relationships.contains { $0.kind == .environmentValue && $0.source == "dismiss" } == true &&
+            semantic?.relationships.contains { $0.kind == .persistedStorage && $0.source == "launchCount" } == true &&
+            semantic?.relationships.contains { $0.kind == .focusState && $0.source == "focusedField" } == true &&
+            semantic?.relationships.contains { $0.kind == .observableModel && $0.source == "bindableModel" && $0.target == "PlayerViewModel" } == true &&
+            semantic?.relationships.contains { $0.kind == .lifecycleHook && $0.source == "onChange" && $0.target == "query" } == true)
 
     // MARK: Safe-apply pipeline (real file IO + git diff)
     let fm = FileManager.default

@@ -12,6 +12,7 @@ public enum SwiftUIPropertyWrapperKind: String, Codable, Hashable, Sendable {
     case appStorage
     case sceneStorage
     case focusState
+    case bindable
     case query
     case other
 }
@@ -22,8 +23,58 @@ public struct SwiftUISemanticProperty: Codable, Hashable, Sendable {
     public var initialValue: String?
     public var wrappers: [SwiftUIPropertyWrapperKind]
     public var rawWrappers: [String]
+    public var wrapperArguments: [String]
     public var isNavigationPath: Bool
     public var isViewModelLike: Bool
+
+    public init(name: String, typeAnnotation: String?, initialValue: String?,
+                wrappers: [SwiftUIPropertyWrapperKind], rawWrappers: [String],
+                wrapperArguments: [String] = [], isNavigationPath: Bool,
+                isViewModelLike: Bool) {
+        self.name = name
+        self.typeAnnotation = typeAnnotation
+        self.initialValue = initialValue
+        self.wrappers = wrappers
+        self.rawWrappers = rawWrappers
+        self.wrapperArguments = wrapperArguments
+        self.isNavigationPath = isNavigationPath
+        self.isViewModelLike = isViewModelLike
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case typeAnnotation
+        case initialValue
+        case wrappers
+        case rawWrappers
+        case wrapperArguments
+        case isNavigationPath
+        case isViewModelLike
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        typeAnnotation = try container.decodeIfPresent(String.self, forKey: .typeAnnotation)
+        initialValue = try container.decodeIfPresent(String.self, forKey: .initialValue)
+        wrappers = try container.decode([SwiftUIPropertyWrapperKind].self, forKey: .wrappers)
+        rawWrappers = try container.decode([String].self, forKey: .rawWrappers)
+        wrapperArguments = try container.decodeIfPresent([String].self, forKey: .wrapperArguments) ?? []
+        isNavigationPath = try container.decode(Bool.self, forKey: .isNavigationPath)
+        isViewModelLike = try container.decode(Bool.self, forKey: .isViewModelLike)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(typeAnnotation, forKey: .typeAnnotation)
+        try container.encodeIfPresent(initialValue, forKey: .initialValue)
+        try container.encode(wrappers, forKey: .wrappers)
+        try container.encode(rawWrappers, forKey: .rawWrappers)
+        try container.encode(wrapperArguments, forKey: .wrapperArguments)
+        try container.encode(isNavigationPath, forKey: .isNavigationPath)
+        try container.encode(isViewModelLike, forKey: .isViewModelLike)
+    }
 }
 
 public struct SwiftUIForEachSemantic: Codable, Hashable, Sendable {
@@ -45,15 +96,27 @@ public struct SwiftUIAsyncSemantic: Codable, Hashable, Sendable {
     public var expression: String
 }
 
+public struct SwiftUIHookSemantic: Codable, Hashable, Sendable {
+    public var kind: String
+    public var expression: String
+}
+
 public enum SwiftUISemanticRelationshipKind: String, Codable, Hashable, Sendable {
+    case state
+    case binding
     case viewModel
     case environmentObject
+    case environmentValue
+    case persistedStorage
+    case focusState
+    case observableModel
     case navigationPath
     case dataSource
     case navigationDestination
     case modalPresentation
     case customView
     case asyncWork
+    case lifecycleHook
 }
 
 public struct SwiftUISemanticRelationship: Codable, Hashable, Sendable {
@@ -78,6 +141,7 @@ public struct SwiftUISemanticView: Codable, Hashable, Sendable {
     public var forEachLoops: [SwiftUIForEachSemantic]
     public var navigation: [SwiftUINavigationSemantic]
     public var asyncHooks: [SwiftUIAsyncSemantic]
+    public var lifecycleHooks: [SwiftUIHookSemantic]
     public var conditionalBranchCount: Int
     public var customModifiers: [String]
     public var customViewCalls: [String]
@@ -87,7 +151,8 @@ public struct SwiftUISemanticView: Codable, Hashable, Sendable {
 
     public init(viewName: String, filePath: String, properties: [SwiftUISemanticProperty],
                 forEachLoops: [SwiftUIForEachSemantic], navigation: [SwiftUINavigationSemantic],
-                asyncHooks: [SwiftUIAsyncSemantic], conditionalBranchCount: Int,
+                asyncHooks: [SwiftUIAsyncSemantic], lifecycleHooks: [SwiftUIHookSemantic] = [],
+                conditionalBranchCount: Int,
                 customModifiers: [String], customViewCalls: [String],
                 customLayoutTypes: [String], observableTypes: [String],
                 relationships: [SwiftUISemanticRelationship] = []) {
@@ -97,6 +162,7 @@ public struct SwiftUISemanticView: Codable, Hashable, Sendable {
         self.forEachLoops = forEachLoops
         self.navigation = navigation
         self.asyncHooks = asyncHooks
+        self.lifecycleHooks = lifecycleHooks
         self.conditionalBranchCount = conditionalBranchCount
         self.customModifiers = customModifiers
         self.customViewCalls = customViewCalls
@@ -126,6 +192,7 @@ public struct SwiftUISemanticView: Codable, Hashable, Sendable {
         case forEachLoops
         case navigation
         case asyncHooks
+        case lifecycleHooks
         case conditionalBranchCount
         case customModifiers
         case customViewCalls
@@ -142,6 +209,7 @@ public struct SwiftUISemanticView: Codable, Hashable, Sendable {
         forEachLoops = try container.decode([SwiftUIForEachSemantic].self, forKey: .forEachLoops)
         navigation = try container.decode([SwiftUINavigationSemantic].self, forKey: .navigation)
         asyncHooks = try container.decode([SwiftUIAsyncSemantic].self, forKey: .asyncHooks)
+        lifecycleHooks = try container.decodeIfPresent([SwiftUIHookSemantic].self, forKey: .lifecycleHooks) ?? []
         conditionalBranchCount = try container.decode(Int.self, forKey: .conditionalBranchCount)
         customModifiers = try container.decode([String].self, forKey: .customModifiers)
         customViewCalls = try container.decode([String].self, forKey: .customViewCalls)
@@ -158,6 +226,7 @@ public struct SwiftUISemanticView: Codable, Hashable, Sendable {
         try container.encode(forEachLoops, forKey: .forEachLoops)
         try container.encode(navigation, forKey: .navigation)
         try container.encode(asyncHooks, forKey: .asyncHooks)
+        try container.encode(lifecycleHooks, forKey: .lifecycleHooks)
         try container.encode(conditionalBranchCount, forKey: .conditionalBranchCount)
         try container.encode(customModifiers, forKey: .customModifiers)
         try container.encode(customViewCalls, forKey: .customViewCalls)
@@ -243,6 +312,7 @@ private final class SemanticViewVisitor: SyntaxVisitor {
     private var loops: [SwiftUIForEachSemantic] = []
     private var navigation: [SwiftUINavigationSemantic] = []
     private var asyncHooks: [SwiftUIAsyncSemantic] = []
+    private var lifecycleHooks: [SwiftUIHookSemantic] = []
     private var conditionalBranchCount = 0
     private var customModifiers: Set<String> = []
     private var customViewCalls: Set<String> = []
@@ -266,6 +336,7 @@ private final class SemanticViewVisitor: SyntaxVisitor {
             forEachLoops: loops,
             navigation: navigation,
             asyncHooks: asyncHooks,
+            lifecycleHooks: lifecycleHooks,
             conditionalBranchCount: conditionalBranchCount,
             customModifiers: customModifiers.sorted(),
             customViewCalls: customViewCalls.sorted(),
@@ -275,10 +346,13 @@ private final class SemanticViewVisitor: SyntaxVisitor {
     }
 
     override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
-        let rawWrappers = node.attributes.compactMap { element -> String? in
+        let wrapperInfos = node.attributes.compactMap { element -> (name: String, argument: String?)? in
             guard let attr = element.as(AttributeSyntax.self) else { return nil }
-            return text(attr.attributeName).split(separator: ".").last.map(String.init)
+            guard let name = text(attr.attributeName).split(separator: ".").last.map(String.init) else { return nil }
+            return (name, wrapperArgument(from: attr))
         }
+        let rawWrappers = wrapperInfos.map(\.name)
+        let wrapperArguments = wrapperInfos.compactMap(\.argument)
         let wrappers = rawWrappers.map(wrapperKind)
         var wrappedPropertySeen = false
 
@@ -289,9 +363,11 @@ private final class SemanticViewVisitor: SyntaxVisitor {
             let initialValue = binding.initializer.map { text($0.value) }
             let typeText = typeAnnotation ?? ""
             let initText = initialValue ?? ""
-            let viewModelLike = rawWrappers.contains(where: { ["StateObject", "ObservedObject", "EnvironmentObject"].contains($0) }) ||
+            let semanticTarget = typeAnnotation.map(normalizedTypeName) ?? initialValue.flatMap(inferredInitializerType)
+            let viewModelLike = rawWrappers.contains(where: { ["StateObject", "ObservedObject", "EnvironmentObject", "Bindable"].contains($0) }) ||
                 typeText.contains("ViewModel") || typeText.contains("Store") ||
-                name.localizedCaseInsensitiveContains("viewModel")
+                name.localizedCaseInsensitiveContains("viewModel") ||
+                semanticTarget.map { observableTypes.contains($0) } == true
             wrappedPropertySeen = wrappedPropertySeen || !rawWrappers.isEmpty
             properties.append(SwiftUISemanticProperty(
                 name: name,
@@ -299,6 +375,7 @@ private final class SemanticViewVisitor: SyntaxVisitor {
                 initialValue: initialValue,
                 wrappers: wrappers,
                 rawWrappers: rawWrappers,
+                wrapperArguments: wrapperArguments,
                 isNavigationPath: typeText.contains("NavigationPath") || initText.contains("NavigationPath"),
                 isViewModelLike: viewModelLike))
         }
@@ -330,6 +407,8 @@ private final class SemanticViewVisitor: SyntaxVisitor {
                 triggerExpression: callDetail(node, name: name)))
         case "task", "refreshable", "AsyncImage", "Task":
             asyncHooks.append(SwiftUIAsyncSemantic(kind: name, expression: callDetail(node, name: name)))
+        case "onAppear", "onDisappear", "onChange", "onReceive", "onSubmit":
+            lifecycleHooks.append(SwiftUIHookSemantic(kind: name, expression: callDetail(node, name: name)))
         default:
             classifyCustomCall(node, name: name)
         }
@@ -386,9 +465,51 @@ private final class SemanticViewVisitor: SyntaxVisitor {
 
         for property in properties {
             let target = semanticTypeTarget(for: property)
+            if property.wrappers.contains(.state) {
+                append(SwiftUISemanticRelationship(
+                    kind: .state,
+                    source: property.name,
+                    target: target,
+                    detail: wrapperDetail(for: property)))
+            }
+            if property.wrappers.contains(.binding) {
+                append(SwiftUISemanticRelationship(
+                    kind: .binding,
+                    source: property.name,
+                    target: target,
+                    detail: wrapperDetail(for: property)))
+            }
             if property.wrappers.contains(.environmentObject) {
                 append(SwiftUISemanticRelationship(
                     kind: .environmentObject,
+                    source: property.name,
+                    target: target,
+                    detail: wrapperDetail(for: property)))
+            }
+            if property.wrappers.contains(.environment) {
+                append(SwiftUISemanticRelationship(
+                    kind: .environmentValue,
+                    source: property.name,
+                    target: target,
+                    detail: wrapperDetail(for: property)))
+            }
+            if property.wrappers.contains(.appStorage) || property.wrappers.contains(.sceneStorage) {
+                append(SwiftUISemanticRelationship(
+                    kind: .persistedStorage,
+                    source: property.name,
+                    target: target,
+                    detail: wrapperDetail(for: property)))
+            }
+            if property.wrappers.contains(.focusState) {
+                append(SwiftUISemanticRelationship(
+                    kind: .focusState,
+                    source: property.name,
+                    target: target,
+                    detail: wrapperDetail(for: property)))
+            }
+            if property.wrappers.contains(.bindable) || target.map({ observableTypes.contains($0) }) == true {
+                append(SwiftUISemanticRelationship(
+                    kind: .observableModel,
                     source: property.name,
                     target: target,
                     detail: wrapperDetail(for: property)))
@@ -458,6 +579,14 @@ private final class SemanticViewVisitor: SyntaxVisitor {
                 detail: compactExpression(hook.expression)))
         }
 
+        for hook in lifecycleHooks {
+            append(SwiftUISemanticRelationship(
+                kind: .lifecycleHook,
+                source: hook.kind,
+                target: lifecycleTarget(for: hook.expression),
+                detail: compactExpression(hook.expression)))
+        }
+
         return relationships
     }
 
@@ -473,7 +602,11 @@ private final class SemanticViewVisitor: SyntaxVisitor {
 
     private func wrapperDetail(for property: SwiftUISemanticProperty) -> String? {
         guard !property.rawWrappers.isEmpty else { return nil }
-        return property.rawWrappers.map { "@\($0)" }.joined(separator: ", ")
+        var detail = property.rawWrappers.map { "@\($0)" }.joined(separator: ", ")
+        if !property.wrapperArguments.isEmpty {
+            detail += " " + property.wrapperArguments.joined(separator: ", ")
+        }
+        return detail
     }
 
     private func dataSourceDetail(for loop: SwiftUIForEachSemantic) -> String? {
@@ -507,6 +640,19 @@ private final class SemanticViewVisitor: SyntaxVisitor {
         guard let last = prefix.split(separator: ".").last else { return nil }
         let candidate = String(last)
         return candidate.first?.isUppercase == true ? candidate : nil
+    }
+
+    private func lifecycleTarget(for expression: String) -> String? {
+        for property in properties where expression.contains(property.name) {
+            return property.name
+        }
+        return nil
+    }
+
+    private func wrapperArgument(from attribute: AttributeSyntax) -> String? {
+        let raw = attribute.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let open = raw.firstIndex(of: "("), raw.hasSuffix(")") else { return nil }
+        return String(raw[open...]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func firstChildViewCall(in node: FunctionCallExprSyntax) -> String? {
@@ -571,6 +717,7 @@ private final class SemanticViewVisitor: SyntaxVisitor {
         case "AppStorage": return .appStorage
         case "SceneStorage": return .sceneStorage
         case "FocusState": return .focusState
+        case "Bindable": return .bindable
         case "Query": return .query
         default: return .other
         }
@@ -588,7 +735,7 @@ private final class SemanticViewVisitor: SyntaxVisitor {
         "frame", "position", "offset", "foregroundStyle", "foregroundColor", "background", "opacity",
         "cornerRadius", "font", "accessibilityIdentifier", "padding", "toolbar", "navigationTitle",
         "navigationDestination", "sheet", "fullScreenCover", "popover", "task", "refreshable",
-        "onAppear", "onDisappear", "animation", "transition", "clipShape", "mask", "overlay",
+        "onAppear", "onDisappear", "onChange", "onReceive", "onSubmit", "animation", "transition", "clipShape", "mask", "overlay",
         "shadow", "blur", "rotationEffect", "scaleEffect", "blendMode", "tag", "disabled"
     ]
 }
