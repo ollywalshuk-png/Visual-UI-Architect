@@ -105,6 +105,40 @@ func runChecks() async {
         c.check("codegen anchor", src.contains(".accessibilityIdentifier(\"playButton\")"))
         c.check("codegen text", src.contains("Text(\"Play\")"))
         c.check("codegen balanced braces", src.filter { $0 == "{" }.count == src.filter { $0 == "}" }.count)
+
+        func generated(_ target: CodeGenTarget) -> String {
+            var doc = Document(name: "Synth", roots: [panel])
+            doc.codeGenTarget = target
+            return (try? CodeGenService().generate(doc).contents) ?? ""
+        }
+        let reactSrc = generated(.react)
+        c.check("p46 react export component", reactSrc.contains("export default function GeneratedView") &&
+                reactSrc.contains("data-vua-anchor='playButton'") &&
+                reactSrc.contains("onClick={viewModel.playButtonAction"))
+        let nativeSrc = generated(.reactNative)
+        c.check("p46 react native export component", nativeSrc.contains("Pressable") &&
+                nativeSrc.contains("nativeID='playButton'") &&
+                nativeSrc.contains("onPress={viewModel.playButtonAction"))
+        let htmlSrc = generated(.htmlCSS)
+        c.check("p46 html css export document", htmlSrc.contains("<!doctype html>") &&
+                htmlSrc.contains("data-vua-anchor=\"playButton\"") &&
+                htmlSrc.contains("data-vua-action=\"playButtonAction\""))
+        let electronSrc = generated(.electronRenderer)
+        c.check("p46 electron renderer export", electronSrc.contains("renderer") &&
+                electronSrc.contains("electron-renderer") &&
+                electronSrc.contains("data-vua-anchor=\"playButton\""))
+        let flutterSrc = generated(.flutter)
+        c.check("p46 flutter export widget", flutterSrc.contains("class GeneratedView extends StatelessWidget") &&
+                flutterSrc.contains("Positioned(") &&
+                flutterSrc.contains("ElevatedButton(onPressed:"))
+        let uiKitSrc = generated(.uiKit)
+        c.check("p46 uikit export controller", uiKitSrc.contains("import UIKit") &&
+                uiKitSrc.contains("UIViewController") &&
+                uiKitSrc.contains("accessibilityIdentifier = \"playButton\""))
+        let appKitSrc = generated(.appKit)
+        c.check("p46 appkit export controller", appKitSrc.contains("import AppKit") &&
+                appKitSrc.contains("NSViewController") &&
+                appKitSrc.contains("NSUserInterfaceItemIdentifier(\"playButton\")"))
     }
 
     // MARK: Validation

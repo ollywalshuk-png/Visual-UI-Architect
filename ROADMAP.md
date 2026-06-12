@@ -73,6 +73,11 @@ rebuild app bundle → update README → commit when green.
 | P41 | Design system & theme engine | ✅ done | expanded token kinds, Apple/modern/productivity/audio themes, glass/material styles |
 | P42 | Professional audio UI asset library | ✅ done | 300+ assets: 60 knobs, 60 faders, 40 meters, 40 switches, 30 displays, 30 panels |
 | P45 | Advanced SwiftUI import coverage | ✅ done | NavigationSplitView/TabView/Menu/ForEach/GeometryReader/Canvas/Timeline/representable placeholders |
+| P46 | Multi-target export engine | ✅ initial | Layer-tree exporters for React/JSX, React Native, HTML/CSS, Electron renderer HTML, Flutter, UIKit, and AppKit through `CodeGenService`; SwiftUI remains the mature portable export pipeline |
+| P47 | Semantic SwiftUI parser v2 | ⬜ planned | state/binding/environment/navigation/view-model relationships |
+| P48 | Behaviour Binding / ViewModel Engine | ⬜ planned | actions, bindings, generated ViewModels, MIDI/AU wiring |
+| P49 | Component variant depth | ⬜ planned | inherited styles, token-linked overrides, variant switching across export targets |
+| P50 | Target App Injection hardening | ⬜ planned | route insertion, screen creation, asset copying, support modules, rollback/build validation |
 
 † **History note (2026-06-09):** the original `.git` directory was lost when
 the project was restored from a Google Drive zip export (Drive strips

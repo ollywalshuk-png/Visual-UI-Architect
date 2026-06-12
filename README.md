@@ -357,8 +357,17 @@ system keeps design and production-quality code in sync.
   SecureField, Stepper, DatePicker, Link, and representable/layout placeholders.
   Unsupported runtime-heavy structures become locked diagnostic layers rather
   than being silently discarded.
+- **Phase 46 — Multi-target export engine (initial):** `CodeGenService` now
+  routes the same layer tree to first-class generators for **React/JSX**,
+  **React Native**, **HTML/CSS**, **Electron renderer HTML**, **Flutter**,
+  **UIKit**, and **AppKit** in addition to SwiftUI. These exports preserve VUA
+  anchors, absolute geometry, common styling, images, text, buttons, toggles,
+  sliders/controls, and behaviour/binding metadata hooks. SwiftUI remains the
+  mature portable export pipeline; the non-SwiftUI targets are now real
+  generated source paths ready for deeper semantic binding and target-app
+  packaging work.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 482 checks).
+All engines compile and pass the verification harness (`swift run VUACheck`, 489 checks).
 
 ## Requirements
 
@@ -401,7 +410,7 @@ target depending only on the shared domain layer (`VUACore`).
 | `ConstraintEngine` | Pin/center/proportional constraint solving. |
 | `ValidationEngine` | WCAG contrast, touch targets, overlap/clipping, accessibility. |
 | `GitEngine` | Local-first git: status/diff/commit/branch/history/rollback. |
-| `CodeGenEngine` | Production-quality **SwiftUI** generation (UIKit/AppKit/React/Flutter/Compose scaffolded). |
+| `CodeGenEngine` | Multi-target layer-tree generation: mature **SwiftUI** output plus initial React/JSX, React Native, HTML/CSS, Electron renderer, Flutter, UIKit, and AppKit exporters. |
 | `AIEngine` | Provider-abstracted `AgentAdapter` — suggestions only, never edits files. |
 | `PreviewEngine` | Flattened, absolutely-positioned render model for any front-end. |
 | `RepositoryEngine` | **SwiftSyntax** parse (source → layers), source-fidelity write-back, repo scanner, file watcher, safe-apply pipeline. |
@@ -478,5 +487,6 @@ test fails if generated code ever stops compiling outside Visual UI Architect.
 
 ## Roadmap
 
-Next: UX polish, performance for large projects, and deployment/distribution
-readiness.
+Next: semantic SwiftUI parser v2, behaviour/ViewModel binding, component variant
+depth, target-app injection hardening, UX polish, performance for large
+projects, and deployment/distribution readiness.

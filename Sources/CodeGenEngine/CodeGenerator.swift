@@ -32,7 +32,16 @@ public enum CodeGenError: Error, CustomStringConvertible {
 public struct CodeGenService: Sendable {
     private let generators: [CodeGenTarget: any CodeGenerator]
 
-    public init(generators: [any CodeGenerator] = [SwiftUIGenerator()]) {
+    public init(generators: [any CodeGenerator] = [
+        SwiftUIGenerator(),
+        UIKitGenerator(),
+        AppKitGenerator(),
+        ReactGenerator(),
+        ReactNativeGenerator(),
+        HTMLCSSGenerator(),
+        ElectronRendererGenerator(),
+        FlutterGenerator()
+    ]) {
         var map: [CodeGenTarget: any CodeGenerator] = [:]
         for g in generators { map[g.target] = g }
         self.generators = map
