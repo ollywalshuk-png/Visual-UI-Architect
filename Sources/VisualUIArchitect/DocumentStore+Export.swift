@@ -10,14 +10,16 @@ extension DocumentStore {
     func exportPackage(
         to destination: URL,
         moduleName: String = "GeneratedUI",
-        includeControls: Bool = true
+        includeControls: Bool = true,
+        includeMultiTargetSources: Bool = false
     ) -> Result<ExportResult, Error> {
         let request = ExportRequest(
             destination: destination,
             targetKind: .swiftPackage,
             moduleName: moduleName,
             viewName: "GeneratedView",
-            includeControlsLibrary: includeControls)
+            includeControlsLibrary: includeControls,
+            additionalCodeGenTargets: includeMultiTargetSources ? Self.multiTargetExportTargets : [])
         do {
             let result = try ExportIntegrityPipeline().export(document: document, request: request)
             repositoryStatus = result.hasErrors
@@ -29,4 +31,8 @@ extension DocumentStore {
             return .failure(error)
         }
     }
+
+    private static let multiTargetExportTargets: [CodeGenTarget] = [
+        .react, .reactNative, .htmlCSS, .electronRenderer, .flutter, .uiKit, .appKit
+    ]
 }
