@@ -2518,9 +2518,31 @@ func runChecks() async {
         let reactNativeRoot = try makeProject("react-native")
         defer { try? fm.removeItem(at: reactNativeRoot) }
         try #"{"dependencies":{"react-native":"latest","react":"latest"}}"#.data(using: .utf8)!.write(to: reactNativeRoot.appendingPathComponent("package.json"))
+        try """
+        export default function MobileMixer() {
+          return (
+            <View nativeID="mixerRoot" style={{ width: 390, height: 220, backgroundColor: '#111827' }}>
+              <Text testID="mobileTitle" style={{ fontSize: 24, color: '#f8fafc' }}>Mobile Mix</Text>
+              <Pressable nativeID="playButton" style={{ width: 132, height: 44, borderRadius: 12 }}>
+                <Text>Play</Text>
+              </Pressable>
+              <Slider nativeID="gain" style={[styles.slider, { width: 240, height: 36 }]} />
+              <Switch testID="bypass" accessibilityLabel="Bypass" />
+            </View>
+          )
+        }
+        """.data(using: .utf8)!.write(to: reactNativeRoot.appendingPathComponent("MobileMixer.tsx"))
         let reactNativeSummary = detector.detect(root: reactNativeRoot)
+        let reactNativeImported = reactNativeSummary.candidates.first.flatMap { coordinator.importCandidate($0) }
+        let reactNativeLayers = reactNativeImported?.view.roots.flatMap { $0.flattened() } ?? []
         c.check("p39 detects React Native before React", reactNativeSummary.framework == .reactNative)
-        c.check("p39 React Native is coming soon", reactNativeSummary.implementationState == .comingSoon)
+        c.check("p58 React Native static import", reactNativeSummary.implementationState == .implemented &&
+                reactNativeSummary.rating == .yellow &&
+                reactNativeLayers.contains { $0.binding?.anchorID == "mixerRoot" && $0.kind.isGroupLike } &&
+                reactNativeLayers.contains { $0.binding?.anchorID == "mobileTitle" && $0.kind == .label } &&
+                reactNativeLayers.contains { $0.binding?.anchorID == "playButton" && $0.kind == .button } &&
+                reactNativeLayers.contains { $0.binding?.anchorID == "gain" && $0.kind == .slider } &&
+                reactNativeLayers.contains { $0.binding?.anchorID == "bypass" && $0.kind == .toggle })
 
         let electronRoot = try makeProject("electron")
         defer { try? fm.removeItem(at: electronRoot) }

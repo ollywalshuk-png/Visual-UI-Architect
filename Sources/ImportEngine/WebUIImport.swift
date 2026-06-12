@@ -87,8 +87,10 @@ public enum WebUIImport {
         switch framework {
         case .htmlCSS:
             return ["html", "htm"].contains(ext)
+        case .reactNative:
+            return ["js", "jsx", "ts", "tsx"].contains(ext)
         case .react, .electron:
-            return ["html", "htm", "jsx", "tsx"].contains(ext)
+            return ["html", "htm", "js", "jsx", "ts", "tsx"].contains(ext)
         default:
             return false
         }
@@ -292,8 +294,9 @@ private struct WebLayerMapper {
         var unsupported = 0
         var hasAnchors = anchorValue(node.attributes) != nil
         var childLayers: [Layer] = []
+        let collapseChildrenIntoText = isButtonLike(lower) && !node.children.contains(where: containsAnchor)
 
-        for child in node.children {
+        for child in collapseChildrenIntoText ? [] : node.children {
             let mapped = map(child)
             supported += mapped.supported
             unsupported += mapped.unsupported
@@ -475,9 +478,14 @@ private struct WebLayerMapper {
             .contains(lower)
     }
 
+    private func isButtonLike(_ lower: String) -> Bool {
+        ["button", "a", "pressable", "touchableopacity"].contains(lower)
+    }
+
     private func label(for node: WebNode, fallback: String) -> String {
         anchorValue(node.attributes)
             ?? node.attributes["aria-label"]
+            ?? node.attributes["accessibilitylabel"]
             ?? node.attributes["name"]
             ?? node.attributes["classname"]
             ?? node.attributes["class"]
@@ -505,12 +513,17 @@ private struct WebLayerMapper {
     }
 
     private func anchorValue(_ attributes: [String: String]) -> String? {
-        for key in ["data-vua-anchor", "id", "data-testid", "data-test-id"] {
+        for key in ["data-vua-anchor", "nativeid", "id", "testid", "data-testid", "data-test-id", "accessibilitylabel"] {
             if let value = attributes[key], !value.isEmpty, value != "true" {
                 return value
             }
         }
         return nil
+    }
+
+    private func containsAnchor(_ node: WebNode) -> Bool {
+        if anchorValue(node.attributes) != nil { return true }
+        return node.children.contains(where: containsAnchor)
     }
 
     private func numericAttribute(_ key: String, in attributes: [String: String]) -> Double? {

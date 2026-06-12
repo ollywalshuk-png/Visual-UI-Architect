@@ -68,7 +68,7 @@ rebuild app bundle → update README → commit when green.
 | P31 | UX / performance / deployment polish | ✅ done | injection summaries, graph metrics/large-graph warnings, deployment readiness diagnostics |
 | P32 | Target injection UI + round-trip depth + graph indexing | ✅ done | dedicated injection panel, text/style write-back, nav/list/form parsing, cached graph index |
 | P33 | Import-to-edit fail-safety | ✅ done | auto-anchor unanchored imports, apply-capable common SwiftUI, concrete style write-back |
-| P39 | Universal import architecture | ✅ done | ImportEngine framework detection for SwiftUI/UIKit/AppKit/React/React Native/Electron/HTML/CSS/Flutter/unknown |
+| P39 | Universal import architecture | ✅ done | ImportEngine framework detection for SwiftUI/UIKit/AppKit/React/React Native/Electron/HTML/CSS/Flutter/unknown; static React/React Native/Electron/HTML layer import |
 | P40 | Import Wizard | ✅ done | guided project selection, detection, summary, screen review, warnings, and SwiftUI import handoff |
 | P41 | Design system & theme engine | ✅ done | expanded token kinds, Apple/modern/productivity/audio themes, glass/material styles |
 | P42 | Professional audio UI asset library | ✅ done | 300+ assets: 60 knobs, 60 faders, 40 meters, 40 switches, 30 displays, 30 panels |

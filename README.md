@@ -332,9 +332,10 @@ system keeps design and production-quality code in sync.
   ratings, implementation state, warnings, file/screen/component counts, and
   SwiftUI candidates. The app now has a guided **Import Wizard** with project
   selection, framework detection, summary, screen discovery, review, and import
-  steps. SwiftUI remains the fully implemented import path; React/Electron/HTML
-  are foundation-only detection states and future adapters are surfaced safely
-  with warnings instead of destructive or silent imports.
+  steps. SwiftUI remains the mature import path; static React, React Native,
+  Electron renderer, and HTML screens can now import editable layer trees from
+  DOM/JSX-like source, while UIKit/AppKit/Flutter future adapters are surfaced
+  safely with warnings instead of destructive or silent imports.
 
 - **Phase 41 — Design system and theme engine (done):** design tokens now cover
   border, elevation, opacity, and glass styles in addition to colours,
