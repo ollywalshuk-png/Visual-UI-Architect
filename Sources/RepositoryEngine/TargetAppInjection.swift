@@ -3,6 +3,28 @@ import GitEngine
 import VUACore
 
 public enum TargetAppInjection {
+    public struct AssetCopy: Hashable, Sendable {
+        public var name: String
+        public var sourceURL: URL
+        public var destinationFileName: String
+
+        public init(name: String, sourceURL: URL, destinationFileName: String? = nil) {
+            self.name = name
+            self.sourceURL = sourceURL
+            self.destinationFileName = destinationFileName ?? sourceURL.lastPathComponent
+        }
+    }
+
+    public struct AssetCopyResult: Hashable, Sendable {
+        public var name: String
+        public var sourceURL: URL
+        public var destinationURL: URL
+        public var destinationRelativePath: String
+        public var byteCount: Int64
+        public var alreadyExists: Bool
+        public var didCopy: Bool
+    }
+
     public struct Request: Sendable {
         public var repoRoot: URL
         public var targetFile: String
@@ -12,10 +34,15 @@ public enum TargetAppInjection {
         public var runBuild: Bool
         public var allowFullFileReplacement: Bool
         public var allowCreateFile: Bool
+        public var assetCopies: [AssetCopy]
+        public var assetDestinationDirectory: String?
+        public var allowAssetCopy: Bool
 
         public init(repoRoot: URL, targetFile: String, generatedSource: String,
                     expectedHash: String? = nil, allowDirtyRepo: Bool = false, runBuild: Bool = false,
-                    allowFullFileReplacement: Bool = false, allowCreateFile: Bool = false) {
+                    allowFullFileReplacement: Bool = false, allowCreateFile: Bool = false,
+                    assetCopies: [AssetCopy] = [], assetDestinationDirectory: String? = nil,
+                    allowAssetCopy: Bool = false) {
             self.repoRoot = repoRoot
             self.targetFile = targetFile
             self.generatedSource = generatedSource
@@ -24,6 +51,9 @@ public enum TargetAppInjection {
             self.runBuild = runBuild
             self.allowFullFileReplacement = allowFullFileReplacement
             self.allowCreateFile = allowCreateFile
+            self.assetCopies = assetCopies
+            self.assetDestinationDirectory = assetDestinationDirectory
+            self.allowAssetCopy = allowAssetCopy
         }
     }
 
@@ -39,6 +69,7 @@ public enum TargetAppInjection {
         public var buildOutput: String
         public var rollbackPlan: [String]
         public var wroteFile: Bool
+        public var assetCopyResults: [AssetCopyResult]
         public var replacementMode: ReplacementMode
         public var changedLineCount: Int
 
@@ -49,7 +80,8 @@ public enum TargetAppInjection {
             case .fullFile: "Full-file"
             case .newFile: "New-file"
             }
-            return "\(mode) injection, \(changedLineCount) changed line(s), \(assetDependencies.count) asset dependency(ies)."
+            let assetCopySummary = assetCopyResults.isEmpty ? "" : ", \(assetCopyResults.count) asset copy target(s)"
+            return "\(mode) injection, \(changedLineCount) changed line(s), \(assetDependencies.count) asset dependency(ies)\(assetCopySummary)."
         }
     }
 
@@ -58,6 +90,7 @@ public enum TargetAppInjection {
         public enum Code: String, Sendable {
             case targetMissing, targetOutsideRepository, unsupportedTarget, dirtyRepository, hashMismatch
             case sourcePreflight, buildFailed, noInjectionMarker, fullFileReplacementBlocked, createFileBlocked
+            case assetCopyBlocked, assetSourceMissing, assetDestinationConflict
         }
         public let id = UUID()
         public var severity: Severity
@@ -161,12 +194,15 @@ public enum TargetAppInjection {
             ($0.hasPrefix("+") && !$0.hasPrefix("+++")) || ($0.hasPrefix("-") && !$0.hasPrefix("---"))
         }.count
         let assets = assetDependencies(in: request.generatedSource)
+        let assetCopyPlan = prepareAssetCopies(request: request, diagnostics: &diagnostics)
+        var assetCopyResults = assetCopyPlan.map { $0.result(didCopy: false) }
         var buildRan = false
         var buildPassed = true
         var buildOutput = ""
         var didWriteFile = false
 
         if write && diagnostics.allSatisfy({ $0.severity != .blocker }) {
+            var targetWriteSucceeded = false
             do {
                 if isNewFile {
                     try FileManager.default.createDirectory(
@@ -174,13 +210,24 @@ public enum TargetAppInjection {
                         withIntermediateDirectories: true)
                 }
                 try preserveLineEndings(from: original, in: finalSource).write(to: targetURL, atomically: true, encoding: .utf8)
+                targetWriteSucceeded = true
             }
             catch {
                 diagnostics.append(.init(severity: .blocker, code: .targetMissing,
                                          message: "Could not write target file: \(error)"))
             }
-            didWriteFile = diagnostics.allSatisfy { $0.severity != .blocker }
-            if request.runBuild {
+            didWriteFile = targetWriteSucceeded
+            if targetWriteSucceeded && diagnostics.allSatisfy({ $0.severity != .blocker }) {
+                do {
+                    assetCopyResults = try copyAssets(assetCopyPlan)
+                } catch let error as AssetCopyWriteError {
+                    diagnostics.append(.init(severity: .blocker, code: .assetCopyBlocked, message: error.message))
+                } catch {
+                    diagnostics.append(.init(severity: .blocker, code: .assetCopyBlocked,
+                                             message: "Could not copy target app asset: \(error)"))
+                }
+            }
+            if request.runBuild && diagnostics.allSatisfy({ $0.severity != .blocker }) {
                 buildRan = true
                 let result = swiftBuild(in: request.repoRoot)
                 buildPassed = result.ok
@@ -192,12 +239,17 @@ public enum TargetAppInjection {
             }
         }
 
-        let gitDiff = repo.isGitRepository() && resolvedTarget.isInsideRepository ? ((try? repo.diff(path: diffPath)) ?? "") : ""
+        let gitDiff = repo.isGitRepository() && resolvedTarget.isInsideRepository
+            ? combined([try? repo.diff(path: diffPath)] + assetCopyPlan.map { try? repo.diff(path: $0.destinationRelativePath) })
+            : ""
+        let rollback = rollbackPlan(for: diffPath, repoRoot: request.repoRoot, isNewFile: isNewFile) +
+            assetCopyPlan.flatMap { assetRollbackPlan(for: $0, repoRoot: request.repoRoot) }
         return Result(targetURL: targetURL, previewDiff: previewDiff, gitDiff: gitDiff,
                       assetDependencies: assets, diagnostics: diagnostics,
                       buildRan: buildRan, buildPassed: buildPassed, buildOutput: buildOutput,
-                      rollbackPlan: rollbackPlan(for: diffPath, repoRoot: request.repoRoot, isNewFile: isNewFile),
+                      rollbackPlan: rollback,
                       wroteFile: didWriteFile,
+                      assetCopyResults: assetCopyResults,
                       replacementMode: replacementMode,
                       changedLineCount: changedLineCount)
     }
@@ -206,6 +258,30 @@ public enum TargetAppInjection {
         var url: URL
         var relativePath: String
         var isInsideRepository: Bool
+    }
+
+    private struct AssetCopyPlan {
+        var name: String
+        var sourceURL: URL
+        var destinationURL: URL
+        var destinationRelativePath: String
+        var byteCount: Int64
+        var alreadyExists: Bool
+
+        func result(didCopy: Bool) -> AssetCopyResult {
+            AssetCopyResult(
+                name: name,
+                sourceURL: sourceURL,
+                destinationURL: destinationURL,
+                destinationRelativePath: destinationRelativePath,
+                byteCount: byteCount,
+                alreadyExists: alreadyExists,
+                didCopy: didCopy)
+        }
+    }
+
+    private struct AssetCopyWriteError: Error {
+        var message: String
     }
 
     private static func resolveTarget(repoRoot: URL, targetFile: String) -> ResolvedTarget {
@@ -222,6 +298,92 @@ public enum TargetAppInjection {
         return ResolvedTarget(url: resolved, relativePath: relative.isEmpty ? "." : relative, isInsideRepository: inside)
     }
 
+    private static func prepareAssetCopies(request: Request, diagnostics: inout [Diagnostic]) -> [AssetCopyPlan] {
+        guard !request.assetCopies.isEmpty else { return [] }
+        guard request.allowAssetCopy else {
+            diagnostics.append(.init(severity: .blocker, code: .assetCopyBlocked,
+                                     message: "Asset copying requires explicit opt-in before writing target app resources."))
+            return []
+        }
+        guard let rawDestination = request.assetDestinationDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawDestination.isEmpty else {
+            diagnostics.append(.init(severity: .blocker, code: .assetCopyBlocked,
+                                     message: "Asset copying requires a target app asset destination directory."))
+            return []
+        }
+
+        let resolvedDirectory = resolveTarget(repoRoot: request.repoRoot, targetFile: rawDestination)
+        guard resolvedDirectory.isInsideRepository else {
+            diagnostics.append(.init(severity: .blocker, code: .assetCopyBlocked,
+                                     message: "Asset destination must stay inside the selected repository: \(rawDestination)"))
+            return []
+        }
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: resolvedDirectory.url.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+            diagnostics.append(.init(severity: .blocker, code: .assetDestinationConflict,
+                                     message: "Asset destination is an existing file, not a directory: \(resolvedDirectory.url.path)"))
+            return []
+        }
+
+        var plans: [AssetCopyPlan] = []
+        var seenDestinations = Set<String>()
+        for copy in request.assetCopies {
+            let sourceURL = copy.sourceURL.standardizedFileURL.resolvingSymlinksInPath()
+            var sourceIsDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: sourceURL.path, isDirectory: &sourceIsDirectory),
+                  !sourceIsDirectory.boolValue else {
+                diagnostics.append(.init(severity: .blocker, code: .assetSourceMissing,
+                                         message: "Asset source is missing or is a directory: \(copy.sourceURL.path)"))
+                continue
+            }
+
+            let destinationName = copy.destinationFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !destinationName.isEmpty, !destinationName.hasPrefix("/") else {
+                diagnostics.append(.init(severity: .blocker, code: .assetDestinationConflict,
+                                         message: "Asset destination filename must be relative: \(copy.destinationFileName)"))
+                continue
+            }
+
+            let destinationURL = resolvedDirectory.url
+                .appendingPathComponent(destinationName)
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
+            guard isInside(destinationURL, root: resolvedDirectory.url) else {
+                diagnostics.append(.init(severity: .blocker, code: .assetDestinationConflict,
+                                         message: "Asset destination escapes the selected asset directory: \(destinationName)"))
+                continue
+            }
+            let destinationRelativePath = relativePath(from: request.repoRoot, to: destinationURL)
+            guard seenDestinations.insert(destinationRelativePath).inserted else {
+                diagnostics.append(.init(severity: .blocker, code: .assetDestinationConflict,
+                                         message: "Multiple assets target the same destination: \(destinationRelativePath)"))
+                continue
+            }
+
+            var destinationIsDirectory: ObjCBool = false
+            let destinationExists = FileManager.default.fileExists(atPath: destinationURL.path, isDirectory: &destinationIsDirectory)
+            if destinationExists && destinationIsDirectory.boolValue {
+                diagnostics.append(.init(severity: .blocker, code: .assetDestinationConflict,
+                                         message: "Asset destination is an existing directory: \(destinationRelativePath)"))
+                continue
+            }
+            if destinationExists && !filesMatch(sourceURL, destinationURL) {
+                diagnostics.append(.init(severity: .blocker, code: .assetDestinationConflict,
+                                         message: "Asset destination already exists with different contents: \(destinationRelativePath)"))
+                continue
+            }
+
+            plans.append(AssetCopyPlan(
+                name: copy.name,
+                sourceURL: sourceURL,
+                destinationURL: destinationURL,
+                destinationRelativePath: destinationRelativePath,
+                byteCount: byteCount(of: sourceURL),
+                alreadyExists: destinationExists))
+        }
+        return plans
+    }
+
     private static func relativePath(from root: URL, to target: URL) -> String {
         let rootComponents = root.standardizedFileURL.pathComponents
         let targetComponents = target.standardizedFileURL.pathComponents
@@ -230,6 +392,12 @@ public enum TargetAppInjection {
             return target.path
         }
         return targetComponents.dropFirst(rootComponents.count).joined(separator: "/")
+    }
+
+    private static func isInside(_ url: URL, root: URL) -> Bool {
+        let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        return path == rootPath || path.hasPrefix(rootPath + "/")
     }
 
     private static func replaceInjectionRegion(in source: String, with generated: String) -> String {
@@ -276,8 +444,44 @@ public enum TargetAppInjection {
         return out.count > 2 ? out.joined(separator: "\n") : ""
     }
 
+    private static func combined(_ diffs: [String?]) -> String {
+        diffs.compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: "\n\n")
+    }
+
     private static func preserveLineEndings(from original: String, in updated: String) -> String {
         original.contains("\r\n") ? updated.replacingOccurrences(of: "\n", with: "\r\n") : updated
+    }
+
+    private static func copyAssets(_ plans: [AssetCopyPlan]) throws -> [AssetCopyResult] {
+        var results: [AssetCopyResult] = []
+        for plan in plans {
+            if plan.alreadyExists {
+                results.append(plan.result(didCopy: false))
+                continue
+            }
+            do {
+                try FileManager.default.createDirectory(
+                    at: plan.destinationURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: plan.sourceURL, to: plan.destinationURL)
+                results.append(plan.result(didCopy: true))
+            } catch {
+                throw AssetCopyWriteError(
+                    message: "Could not copy asset '\(plan.name)' to \(plan.destinationRelativePath): \(error)")
+            }
+        }
+        return results
+    }
+
+    private static func filesMatch(_ lhs: URL, _ rhs: URL) -> Bool {
+        guard let lhsData = try? Data(contentsOf: lhs),
+              let rhsData = try? Data(contentsOf: rhs) else { return false }
+        return lhsData == rhsData
+    }
+
+    private static func byteCount(of url: URL) -> Int64 {
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
+        return size ?? 0
     }
 
     private static func rollbackPlan(for targetFile: String, repoRoot: URL, isNewFile: Bool) -> [String] {
@@ -291,6 +495,17 @@ public enum TargetAppInjection {
         }
         if repo.isGitRepository() { return ["git restore -- \(quoted)", "git diff -- \(quoted)"] }
         return ["Restore \(targetFile) from your last backup or source-control checkpoint."]
+    }
+
+    private static func assetRollbackPlan(for plan: AssetCopyPlan, repoRoot: URL) -> [String] {
+        let repo = GitRepository(repositoryURL: repoRoot)
+        let quoted = shellQuoted(plan.destinationRelativePath)
+        if plan.alreadyExists {
+            if repo.isGitRepository() { return ["git restore -- \(quoted)", "git diff -- \(quoted)"] }
+            return ["Restore \(plan.destinationRelativePath) from your last backup or source-control checkpoint."]
+        }
+        if repo.isGitRepository() { return ["rm -f -- \(quoted)", "git status -- \(quoted)"] }
+        return ["Delete copied asset \(plan.destinationRelativePath) from the target app."]
     }
 
     private static func shellQuoted(_ value: String) -> String {
