@@ -224,7 +224,9 @@ struct CanvasView: View {
 
     private func previewResult(for layer: Layer) -> InteractionPreviewResult? {
         guard store.isTestMode else { return nil }
-        if layer.kind == .meter, store.isTestMode,
+        if let profile = ControlBehaviourResolver.profile(for: layer),
+           [.meterReadout, .valueDisplay].contains(profile.type),
+           profile.demoAnimationEnabled,
            let value = InteractionPreviewEngine.demoMeterValue(for: layer, time: demoTime) {
             var state = store.previewState
             InteractionPreviewEngine.setValue(value, for: layer, in: &state)
@@ -235,7 +237,7 @@ struct CanvasView: View {
 
     private func updatePreviewInteraction(_ node: RenderModel.Node, value: DragGesture.Value) {
         let layer = node.layer
-        guard InteractionPreviewEngine.supportsInteraction(layer.kind) else { return }
+        guard InteractionPreviewEngine.supportsInteraction(layer) else { return }
         store.selection = [layer.id]
         let current = store.previewResult(for: layer)?.value ?? InteractionPreviewEngine.defaultValue(for: layer) ?? 0
         switch layer.kind {

@@ -120,6 +120,12 @@ public struct SwiftUIGenerator: CodeGenerator {
                 if behaviour.automationEnabled {
                     b.line("// Automation: enabled")
                 }
+                if behaviour.type == .meterReadout || behaviour.type == .valueDisplay {
+                    b.line("// Demo mode: \(behaviour.meterDemoMode.displayName), animation \(behaviour.demoAnimationEnabled ? "enabled" : "disabled")")
+                }
+                if behaviour.type == .valueDisplay {
+                    b.line("// Display mode: \(behaviour.displayMode.displayName)")
+                }
             }
         }
         if let paint = layer.rasterPaint {
@@ -198,7 +204,11 @@ public struct SwiftUIGenerator: CodeGenerator {
             }
             b.line("}")
         case .label, .text:
-            b.line("Text(\(quoted(layer.text ?? layer.name)))")
+            if let profile = ControlBehaviourResolver.profile(for: layer), profile.type == .valueDisplay {
+                b.line(valueDisplayText(for: layer, profile: profile))
+            } else {
+                b.line("Text(\(quoted(layer.text ?? layer.name)))")
+            }
         case .image:
             if let assetID = layer.assetID, let asset = document.asset(id: assetID) {
                 b.line("Image(\(quoted(asset.name)))")
@@ -279,6 +289,21 @@ public struct SwiftUIGenerator: CodeGenerator {
         guard let c = layer.control else { return "" }
         let state = controlStateName(for: layer)
         return "\(state) = \(state) >= \(fmt((c.minValue + c.maxValue) / 2)) ? \(fmt(c.minValue)) : \(fmt(c.maxValue))"
+    }
+
+    private func valueDisplayText(for layer: Layer, profile: ControlBehaviourProfile) -> String {
+        let label = layer.control?.displayName ?? layer.text ?? layer.name
+        switch profile.displayMode {
+        case .statusText:
+            return "Text(\(quoted(profile.statusText ?? "Ready")))"
+        case .presetName:
+            return "Text(\(quoted(profile.statusText ?? "Init Preset")))"
+        case .spectrumMock:
+            return "Text(\(quoted(label + ": Spectrum")))"
+        case .valueReadout:
+            let unit = profile.unit.symbol.isEmpty ? "" : " \(profile.unit.symbol)"
+            return "Text([\(quoted(label)), \"\\(\(controlStateName(for: layer)))\(unit)\"].joined(separator: \": \"))"
+        }
     }
 
     private func controlStateName(for layer: Layer) -> String {
