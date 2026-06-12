@@ -56,9 +56,9 @@ public struct ImportFrameworkDetector: Sendable {
         switch framework {
         case .swiftUI:
             return ExistingUIImport.scanRepository(root)
-        case .react, .electron, .htmlCSS:
+        case .react, .electron, .htmlCSS, .flutter:
             return WebUIImport.scanRepository(root, framework: framework)
-        case .uiKit, .appKit, .reactNative, .flutter, .unknown:
+        case .uiKit, .appKit, .reactNative, .unknown:
             return []
         }
     }
@@ -67,7 +67,7 @@ public struct ImportFrameworkDetector: Sendable {
                                      candidates: [ExistingUIImport.Candidate]) -> ImplementationState {
         if framework == .unknown { return .unsupported }
         if framework == .swiftUI { return .implemented }
-        if [.react, .electron, .htmlCSS].contains(framework) {
+        if [.react, .electron, .htmlCSS, .flutter].contains(framework) {
             return candidates.isEmpty ? .foundationOnly : .implemented
         }
         return .comingSoon
@@ -78,7 +78,7 @@ public struct ImportFrameworkDetector: Sendable {
         if framework == .swiftUI {
             return files.filter { $0.role == .swiftUIView }.flatMap(\.viewNames).count
         }
-        if [.react, .electron, .htmlCSS].contains(framework) {
+        if [.react, .electron, .htmlCSS, .flutter].contains(framework) {
             return candidates.reduce(0) { $0 + $1.supportedElementCount }
         }
         return 0
@@ -95,7 +95,7 @@ public struct ImportFrameworkDetector: Sendable {
 
     private func rating(for framework: ImportFramework, candidates: [ExistingUIImport.Candidate], state: ImplementationState) -> ImportCompatibilityRating {
         if framework == .swiftUI, !candidates.isEmpty { return .green }
-        if [.react, .electron, .htmlCSS].contains(framework), state == .implemented, !candidates.isEmpty { return .yellow }
+        if [.react, .electron, .htmlCSS, .flutter].contains(framework), state == .implemented, !candidates.isEmpty { return .yellow }
         if state == .foundationOnly { return .yellow }
         return .red
     }
@@ -107,7 +107,10 @@ public struct ImportFrameworkDetector: Sendable {
         if state == .foundationOnly {
             return ["\(framework.displayName) detection is available; layer import adapter is foundation-only in this build."]
         }
-        if [.react, .electron, .htmlCSS].contains(framework), state == .implemented {
+        if [.react, .electron, .htmlCSS, .flutter].contains(framework), state == .implemented {
+            if framework == .flutter {
+                return ["Flutter static widget import is available for discovered build trees. Dart state, custom render objects, and runtime layout remain source-owned."]
+            }
             return ["\(framework.displayName) static layer import is available for discovered DOM/JSX screens. Scripts, CSS cascade, and runtime state remain source-owned."]
         }
         if state == .comingSoon {

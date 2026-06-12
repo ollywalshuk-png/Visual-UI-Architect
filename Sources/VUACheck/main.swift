@@ -2559,9 +2559,57 @@ func runChecks() async {
         let flutterRoot = try makeProject("flutter")
         defer { try? fm.removeItem(at: flutterRoot) }
         try "dependencies:\n  flutter:\n    sdk: flutter\n".data(using: .utf8)!.write(to: flutterRoot.appendingPathComponent("pubspec.yaml"))
+        try fm.createDirectory(at: flutterRoot.appendingPathComponent("lib"), withIntermediateDirectories: true)
+        try """
+        import 'package:flutter/material.dart';
+
+        class MixerScreen extends StatelessWidget {
+          const MixerScreen({super.key});
+
+          @override
+          Widget build(BuildContext context) {
+            return Scaffold(
+              body: Container(
+                key: const ValueKey('mixerRoot'),
+                width: 420,
+                height: 240,
+                child: Column(
+                  children: [
+                    const Text('Mixer', style: TextStyle(fontSize: 24)),
+                    ElevatedButton(
+                      key: const ValueKey('playButton'),
+                      onPressed: () {},
+                      child: const Text('Play'),
+                    ),
+                    Slider(
+                      key: const ValueKey('gainSlider'),
+                      value: 0.5,
+                      onChanged: (_) {},
+                    ),
+                    Switch(
+                      key: const ValueKey('bypassSwitch'),
+                      value: true,
+                      onChanged: (_) {},
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+        }
+        """.data(using: .utf8)!.write(to: flutterRoot.appendingPathComponent("lib/main.dart"))
         let flutterSummary = detector.detect(root: flutterRoot)
+        let flutterImported = flutterSummary.candidates.first.flatMap { coordinator.importCandidate($0) }
+        let flutterLayers = flutterImported?.view.roots.flatMap { $0.flattened() } ?? []
         c.check("p39 detects Flutter", flutterSummary.framework == .flutter)
-        c.check("p39 Flutter is coming soon", flutterSummary.implementationState == .comingSoon)
+        c.check("p61 Flutter static widget import",
+                flutterSummary.implementationState == .implemented &&
+                flutterSummary.rating == .yellow &&
+                flutterSummary.screenCount == 1 &&
+                flutterLayers.contains { $0.binding?.anchorID == "mixerRoot" && $0.kind.isGroupLike && $0.frame.width == 420 } &&
+                flutterLayers.contains { $0.binding?.anchorID == "playButton" && $0.kind == .button && $0.text == "Play" } &&
+                flutterLayers.contains { $0.binding?.anchorID == "gainSlider" && $0.kind == .slider } &&
+                flutterLayers.contains { $0.binding?.anchorID == "bypassSwitch" && $0.kind == .toggle })
 
         let unknownRoot = try makeProject("unknown")
         defer { try? fm.removeItem(at: unknownRoot) }

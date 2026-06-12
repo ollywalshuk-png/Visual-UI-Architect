@@ -28,9 +28,9 @@ public enum ImportFramework: String, Codable, Hashable, Sendable, CaseIterable {
 
     public var isImportImplemented: Bool {
         switch self {
-        case .swiftUI, .react, .electron, .htmlCSS:
+        case .swiftUI, .react, .electron, .htmlCSS, .flutter:
             return true
-        case .uiKit, .appKit, .reactNative, .flutter, .unknown:
+        case .uiKit, .appKit, .reactNative, .unknown:
             return false
         }
     }

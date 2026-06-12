@@ -86,6 +86,73 @@ final class WebUIImportTests: XCTestCase {
         XCTAssertTrue(layers.contains { $0.binding?.anchorID == "level" && $0.kind == .slider })
     }
 
+    func testFlutterProjectDiscoversAndImportsStaticWidgetTree() throws {
+        let root = try makeProject()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "dependencies:\n  flutter:\n    sdk: flutter\n"
+            .write(to: root.appendingPathComponent("pubspec.yaml"), atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("lib"), withIntermediateDirectories: true)
+        try #"""
+        import 'package:flutter/material.dart';
+
+        class MixerScreen extends StatelessWidget {
+          const MixerScreen({super.key});
+
+          @override
+          Widget build(BuildContext context) {
+            return Scaffold(
+              body: Container(
+                key: const ValueKey('mixerRoot'),
+                width: 420,
+                height: 240,
+                child: Column(
+                  children: [
+                    const Text('Mixer', style: TextStyle(fontSize: 24)),
+                    ElevatedButton(
+                      key: const ValueKey('playButton'),
+                      onPressed: () {},
+                      child: const Text('Play'),
+                    ),
+                    Slider(
+                      key: const ValueKey('gainSlider'),
+                      value: 0.5,
+                      onChanged: (_) {},
+                    ),
+                    Switch(
+                      key: const ValueKey('bypassSwitch'),
+                      value: true,
+                      onChanged: (_) {},
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+        }
+        """#.write(to: root.appendingPathComponent("lib/main.dart"), atomically: true, encoding: .utf8)
+
+        let summary = ImportFrameworkDetector().detect(root: root)
+        XCTAssertEqual(summary.framework, .flutter)
+        XCTAssertEqual(summary.implementationState, .implemented)
+        XCTAssertEqual(summary.rating, .yellow)
+        XCTAssertEqual(summary.screenCount, 1)
+
+        let candidate = try XCTUnwrap(summary.candidates.first)
+        XCTAssertEqual(candidate.viewName, "MixerScreen")
+        XCTAssertTrue(candidate.hasAnchors)
+        XCTAssertGreaterThanOrEqual(candidate.supportedElementCount, 6)
+
+        let imported = try XCTUnwrap(ImportCoordinator().importCandidate(candidate))
+        XCTAssertFalse(imported.hasAnchors)
+        let layers = imported.view.roots.flatMap { $0.flattened() }
+        XCTAssertTrue(layers.contains { $0.binding?.anchorID == "mixerRoot" && $0.kind.isGroupLike && $0.frame.width == 420 })
+        XCTAssertFalse(layers.contains { $0.tags.contains("widget:Scaffold") && $0.binding?.anchorID == "mixerRoot" })
+        XCTAssertTrue(layers.contains { $0.text == "Mixer" && $0.kind == .label && $0.style.fontSize == 24 })
+        XCTAssertTrue(layers.contains { $0.binding?.anchorID == "playButton" && $0.kind == .button && $0.text == "Play" })
+        XCTAssertTrue(layers.contains { $0.binding?.anchorID == "gainSlider" && $0.kind == .slider })
+        XCTAssertTrue(layers.contains { $0.binding?.anchorID == "bypassSwitch" && $0.kind == .toggle })
+    }
+
     private func makeProject() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("vua-web-import-\(UUID().uuidString)")
