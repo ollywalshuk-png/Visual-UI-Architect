@@ -1540,7 +1540,7 @@ func runChecks() async {
         let afterPreviewTarget = (try? String(contentsOf: target, encoding: .utf8)) ?? ""
         c.check("p29 preview preserves comments", afterPreviewTarget.contains("// keep app comment"))
         c.check("p29 asset dependencies", previewInjection.assetDependencies == ["Logo"])
-        c.check("p29 rollback plan", previewInjection.rollbackPlan.contains { $0.contains("git restore Target.swift") })
+        c.check("p29 rollback plan", previewInjection.rollbackPlan.contains { $0.contains("git restore -- Target.swift") })
         try "// dirty\n".data(using: .utf8)!.write(to: injectDir.appendingPathComponent("Dirty.swift"))
         let dirtyBlocked = TargetAppInjection.preview(.init(
             repoRoot: injectDir, targetFile: "Target.swift", generatedSource: generated,
@@ -1557,6 +1557,49 @@ func runChecks() async {
         let injectedSource = (try? String(contentsOf: target, encoding: .utf8)) ?? ""
         c.check("p29 apply writes target", appliedInjection.wroteFile && injectedSource.contains("Image(\"Logo\")"))
         c.check("p29 git diff preview", appliedInjection.gitDiff.contains("Text(\"New\")"))
+
+        // Phase 50 — target app injection hardening.
+        let outsideTarget = injectDir.deletingLastPathComponent().appendingPathComponent("Outside-\(UUID().uuidString).swift")
+        let outsideOriginal = "Text(\"Outside\")"
+        try outsideOriginal.write(to: outsideTarget, atomically: true, encoding: .utf8)
+        defer { try? fm.removeItem(at: outsideTarget) }
+        let outsideBlocked = TargetAppInjection.apply(.init(
+            repoRoot: injectDir, targetFile: outsideTarget.path, generatedSource: "Text(\"Injected\")",
+            allowDirtyRepo: true, allowFullFileReplacement: true))
+        let outsideAfter = (try? String(contentsOf: outsideTarget, encoding: .utf8)) ?? ""
+        c.check("p50 outside target blocked",
+                outsideBlocked.diagnostics.contains { $0.code == .targetOutsideRepository } &&
+                !outsideBlocked.wroteFile && outsideAfter == outsideOriginal)
+
+        let notesTarget = injectDir.appendingPathComponent("Notes.txt")
+        try "notes".write(to: notesTarget, atomically: true, encoding: .utf8)
+        let unsupportedTarget = TargetAppInjection.preview(.init(
+            repoRoot: injectDir, targetFile: "Notes.txt", generatedSource: "Text(\"Nope\")",
+            allowDirtyRepo: true, allowFullFileReplacement: true))
+        c.check("p50 unsupported target blocked",
+                unsupportedTarget.diagnostics.contains { $0.code == .unsupportedTarget })
+
+        let fullFileTarget = injectDir.appendingPathComponent("Full.swift")
+        let fullFileOriginal = "import SwiftUI\nstruct Full: View { var body: some View { Text(\"Old\") } }\n"
+        let fullFileGenerated = "import SwiftUI\nstruct Full: View { var body: some View { Text(\"New\") } }\n"
+        try fullFileOriginal.write(to: fullFileTarget, atomically: true, encoding: .utf8)
+        let fullFileBlocked = TargetAppInjection.apply(.init(
+            repoRoot: injectDir, targetFile: "Full.swift", generatedSource: fullFileGenerated,
+            expectedHash: SourceSafety.hash(of: fullFileOriginal), allowDirtyRepo: true))
+        let fullFileAfterBlocked = (try? String(contentsOf: fullFileTarget, encoding: .utf8)) ?? ""
+        c.check("p50 full-file replacement requires opt-in",
+                fullFileBlocked.replacementMode == .fullFile &&
+                fullFileBlocked.diagnostics.contains { $0.code == .fullFileReplacementBlocked } &&
+                !fullFileBlocked.wroteFile && fullFileAfterBlocked == fullFileOriginal)
+        let fullFileAllowed = TargetAppInjection.apply(.init(
+            repoRoot: injectDir, targetFile: "Full.swift", generatedSource: fullFileGenerated,
+            expectedHash: SourceSafety.hash(of: fullFileOriginal), allowDirtyRepo: true,
+            allowFullFileReplacement: true))
+        let fullFileAfterAllowed = (try? String(contentsOf: fullFileTarget, encoding: .utf8)) ?? ""
+        c.check("p50 full-file replacement writes when opted in",
+                fullFileAllowed.wroteFile &&
+                fullFileAllowed.diagnostics.contains { $0.code == .noInjectionMarker } &&
+                fullFileAfterAllowed == fullFileGenerated)
 
         // Phase 30 — existing app view graph.
         let graphDir = fm.temporaryDirectory.appendingPathComponent("vua-p30-\(UUID().uuidString)")

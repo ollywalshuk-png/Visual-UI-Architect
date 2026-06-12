@@ -8,6 +8,7 @@ struct TargetInjectionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPath = ""
     @State private var allowDirtyRepo = false
+    @State private var allowFullFileReplacement = false
     @State private var runBuild = true
     @State private var result: TargetAppInjection.Result?
 
@@ -26,6 +27,7 @@ struct TargetInjectionView: View {
                         ForEach(swiftFiles) { file in Text(file.relativePath).tag(file.relativePath) }
                     }
                     Toggle("Allow dirty repository", isOn: $allowDirtyRepo)
+                    Toggle("Allow full-file replacement", isOn: $allowFullFileReplacement)
                     Toggle("Run swift build after apply", isOn: $runBuild)
                 }
                 if let result {
@@ -105,7 +107,8 @@ struct TargetInjectionView: View {
             generatedSource: generated,
             expectedHash: currentHash(root: root, path: selectedPath),
             allowDirtyRepo: allowDirtyRepo,
-            runBuild: runBuild)
+            runBuild: runBuild,
+            allowFullFileReplacement: allowFullFileReplacement)
         result = write ? TargetAppInjection.apply(request) : TargetAppInjection.preview(request)
     }
 
