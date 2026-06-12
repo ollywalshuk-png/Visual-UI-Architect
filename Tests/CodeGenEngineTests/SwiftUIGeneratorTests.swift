@@ -63,6 +63,108 @@ final class SwiftUIGeneratorTests: XCTestCase {
         }
     }
 
+    func testMultiTargetExportsCarryBehaviourBindingPlan() throws {
+        let cutoff = Layer(
+            name: "Cutoff",
+            kind: .slider,
+            frame: VRect(x: 20, y: 20, width: 180, height: 28),
+            binding: CodeBinding(filePath: "Panel.swift", anchorID: "cutoffSlider"),
+            control: ControlMetadata(
+                parameterID: "cutoff",
+                displayName: "Cutoff",
+                minValue: 20,
+                maxValue: 20_000,
+                defaultValue: 1_000,
+                unit: .hertz,
+                behaviourType: "horizontalSlider",
+                bindingName: "viewModel.cutoff",
+                midiCC: 74,
+                auParameterID: "filter.cutoff",
+                automationEnabled: true))
+        let settings = Layer(
+            name: "Settings",
+            kind: .button,
+            frame: VRect(x: 20, y: 58, width: 120, height: 36),
+            text: "Settings",
+            binding: CodeBinding(filePath: "Panel.swift", anchorID: "settingsButton"),
+            control: ControlMetadata(
+                parameterID: "settings",
+                isContinuous: false,
+                behaviourType: "buttonPress",
+                bindingName: "settings"),
+            role: .navigation)
+        let cpu = Layer(
+            name: "CPU",
+            kind: .text,
+            frame: VRect(x: 20, y: 104, width: 160, height: 32),
+            text: "CPU",
+            binding: CodeBinding(filePath: "Panel.swift", anchorID: "cpuReadout"),
+            control: ControlMetadata(
+                parameterID: "cpu",
+                displayName: "CPU",
+                minValue: 0,
+                maxValue: 100,
+                defaultValue: 42,
+                unit: .percent,
+                behaviourType: "valueDisplay",
+                interactionMode: "readOnly",
+                bindingName: "viewModel.cpu"))
+        let document = Document(name: "Bindings", roots: [cutoff, settings, cpu])
+        let service = CodeGenService()
+        let cases: [(CodeGenTarget, [String])] = [
+            (.react, [
+                "export const vuaBindingPlan = [",
+                "propertyName: 'viewModelCutoff'",
+                "midiCC: 74",
+                "auParameterID: 'filter.cutoff'",
+                "data-vua-binding-kind='value'",
+                "data-vua-au-parameter='filter.cutoff'",
+                "onClick={viewModel.navigateSettings"
+            ]),
+            (.reactNative, [
+                "export const vuaBindingPlan = [",
+                "{/* VUA binding: value viewModelCutoff",
+                "{/* VUA binding: navigation navigateSettings"
+            ]),
+            (.htmlCSS, [
+                "id=\"vua-binding-plan\"",
+                "\"propertyName\":\"viewModelCutoff\"",
+                "\"auParameterID\":\"filter.cutoff\"",
+                "data-vua-binding-kind=\"value\"",
+                "data-vua-action-binding=\"navigateSettings\""
+            ]),
+            (.electronRenderer, [
+                "window.vuaBindingPlan = [",
+                "\"actionName\":\"navigateSettings\"",
+                "data-vua-target"
+            ]),
+            (.flutter, [
+                "const List<Map<String, Object?>> vuaBindingPlan = [",
+                "'propertyName': 'viewModelCutoff'",
+                "// VUA binding: value viewModelCutoff"
+            ]),
+            (.uiKit, [
+                "private let vuaBindingPlan: [[String: Any]] = [",
+                "\"propertyName\": \"viewModelCutoff\"",
+                "// VUA binding: navigation navigateSettings"
+            ]),
+            (.appKit, [
+                "private let vuaBindingPlan: [[String: Any]] = [",
+                "\"auParameterID\": \"filter.cutoff\"",
+                "// VUA binding: readOnly viewModelCpu"
+            ])
+        ]
+
+        for (target, snippets) in cases {
+            var doc = document
+            doc.codeGenTarget = target
+            let source = try service.generate(doc).contents
+            for snippet in snippets {
+                XCTAssertTrue(source.contains(snippet), "\(target.displayName) missing \(snippet)\n\(source)")
+            }
+        }
+    }
+
     func testUnsupportedTargetThrows() {
         var doc = sampleDocument()
         doc.codeGenTarget = .jetpackCompose

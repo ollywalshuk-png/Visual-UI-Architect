@@ -67,13 +67,17 @@ public enum BehaviourBindingPlanner {
     }
 
     private static func binding(for layer: Layer) -> BehaviourBinding? {
+        let hasExplicitControl = layer.control != nil
         let metadata = layer.control ?? ControlBehaviourResolver.defaultMetadata(for: layer.kind, name: layer.name)
         guard let metadata else { return nil }
         var probe = layer
         probe.control = metadata
         guard let profile = ControlBehaviourResolver.profile(for: probe) else { return nil }
 
-        let baseName = metadata.bindingName?.nilIfBlank ?? metadata.parameterID.nilIfBlank ?? layer.name
+        let baseName = metadata.bindingName?.nilIfBlank
+            ?? (!hasExplicitControl ? layer.binding?.anchorID.nilIfBlank : nil)
+            ?? metadata.parameterID.nilIfBlank
+            ?? layer.name
         let property = propertyName(for: profile, layer: layer, baseName: baseName)
         let action = actionName(for: profile, layer: layer, baseName: baseName)
         return BehaviourBinding(
@@ -104,7 +108,7 @@ public enum BehaviourBindingPlanner {
         switch profile.type {
         case .buttonPress: return .action
         case .toggleSwitch: return .toggle
-        case .meterReadout: return .readOnly
+        case .meterReadout, .valueDisplay: return .readOnly
         default: return .value
         }
     }
