@@ -367,7 +367,14 @@ system keeps design and production-quality code in sync.
   generated source paths ready for deeper semantic binding and target-app
   packaging work.
 
-All engines compile and pass the verification harness (`swift run VUACheck`, 489 checks).
+- **Phase 47 — Semantic SwiftUI parser v2 (initial):** the repository parser
+  now extracts SwiftUI property-wrapper semantics and relationships for
+  `@State`, `@Binding`, `@Environment`, `@EnvironmentObject`, `@AppStorage`,
+  `@SceneStorage`, `@FocusState`, `@Bindable`, observable model types, model
+  backed `ForEach`, navigation destinations, modals, async work, lifecycle
+  hooks, custom modifiers, custom views, and custom layout structs.
+
+All engines compile and pass the verification harness (`swift run VUACheck`, 536 checks).
 
 ## Requirements
 

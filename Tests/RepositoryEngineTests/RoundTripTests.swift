@@ -151,12 +151,107 @@ final class RoundTripTests: XCTestCase {
         })
     }
 
+    func testSemanticAnalyzerExtractsWrapperArgumentsLifecycleAndObservableModels() {
+        let source = #"""
+        import SwiftUI
+        import Observation
+
+        @Observable
+        final class SettingsModel {
+            var events: AsyncStream<AppEvent> { AsyncStream { _ in } }
+            func load() {}
+            func filter(_ query: String) {}
+        }
+
+        struct SettingsScreen: View {
+            enum Field { case search }
+
+            @Environment(\.dismiss) private var dismiss
+            @Environment(\.colorScheme) private var colorScheme
+            @AppStorage("launchCount") private var launchCount = 0
+            @SceneStorage("selectedTab") private var selectedTab = "mix"
+            @FocusState private var focusedField: Field?
+            @State private var query = ""
+            @Bindable var model: SettingsModel
+
+            var body: some View {
+                Form {
+                    TextField("Search", text: $query)
+                        .focused($focusedField, equals: .search)
+                }
+                .onAppear { model.load() }
+                .onChange(of: query) { _, next in model.filter(next) }
+                .onReceive(model.events) { event in selectedTab = event.tab }
+                .onSubmit { dismiss() }
+            }
+        }
+        """#
+
+        let view = SwiftUISemanticAnalyzer().analyze(source: source, filePath: "SettingsScreen.swift")
+            .first { $0.viewName == "SettingsScreen" }
+        XCTAssertTrue(view?.properties.contains {
+            $0.name == "dismiss" && $0.wrappers.contains(.environment) && $0.wrapperArguments.contains("(\\.dismiss)")
+        } == true)
+        XCTAssertTrue(view?.properties.contains {
+            $0.name == "launchCount" && $0.wrappers.contains(.appStorage) && $0.wrapperArguments.contains("(\"launchCount\")")
+        } == true)
+        XCTAssertTrue(view?.properties.contains {
+            $0.name == "selectedTab" && $0.wrappers.contains(.sceneStorage)
+        } == true)
+        XCTAssertTrue(view?.properties.contains {
+            $0.name == "focusedField" && $0.wrappers.contains(.focusState)
+        } == true)
+        XCTAssertTrue(view?.properties.contains {
+            $0.name == "model" && $0.wrappers.contains(.bindable) && $0.isViewModelLike
+        } == true)
+        XCTAssertTrue(view?.lifecycleHooks.contains { $0.kind == "onAppear" && $0.expression.contains("model.load") } == true)
+        XCTAssertTrue(view?.lifecycleHooks.contains { $0.kind == "onChange" && $0.expression.contains("model.filter") } == true)
+        XCTAssertTrue(view?.lifecycleHooks.contains { $0.kind == "onReceive" && $0.expression.contains("selectedTab") } == true)
+        XCTAssertTrue(view?.lifecycleHooks.contains { $0.kind == "onSubmit" && $0.expression.contains("dismiss") } == true)
+
+        let relationships = view?.relationships ?? []
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .environmentValue && $0.source == "dismiss" && ($0.detail ?? "").contains("\\.dismiss")
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .persistedStorage && $0.source == "launchCount" && ($0.detail ?? "").contains("launchCount")
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .focusState && $0.source == "focusedField" && $0.target == "Field"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .state && $0.source == "query"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .observableModel && $0.source == "model" && $0.target == "SettingsModel"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .viewModel && $0.source == "model" && $0.target == "SettingsModel"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .lifecycleHook && $0.source == "onChange" && $0.target == "query"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .lifecycleHook && $0.source == "onReceive" && $0.target == "selectedTab"
+        })
+    }
+
     func testSemanticViewDecodesLegacyPayloadWithoutRelationships() throws {
         let json = #"""
         {
           "viewName": "LegacyScreen",
           "filePath": "LegacyScreen.swift",
-          "properties": [],
+          "properties": [
+            {
+              "name": "legacyFlag",
+              "typeAnnotation": "Bool",
+              "initialValue": "false",
+              "wrappers": ["state"],
+              "rawWrappers": ["State"],
+              "isNavigationPath": false,
+              "isViewModelLike": false
+            }
+          ],
           "forEachLoops": [],
           "navigation": [],
           "asyncHooks": [],
@@ -170,6 +265,8 @@ final class RoundTripTests: XCTestCase {
 
         let decoded = try JSONDecoder().decode(SwiftUISemanticView.self, from: Data(json.utf8))
         XCTAssertEqual(decoded.viewName, "LegacyScreen")
+        XCTAssertEqual(decoded.properties.first?.wrapperArguments, [])
+        XCTAssertEqual(decoded.lifecycleHooks, [])
         XCTAssertEqual(decoded.relationships, [])
     }
 }
