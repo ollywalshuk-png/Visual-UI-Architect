@@ -165,10 +165,123 @@ final class TargetAppInjectionTests: XCTestCase {
         XCTAssertTrue(blocked.diagnostics.contains { $0.code == .fullFileReplacementBlocked })
     }
 
+    func testAssetCopyPreviewAndApplyCopiesReferencedFile() throws {
+        let repo = try makeTemporaryDirectory()
+        let assetSourceDir = try makeTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: repo)
+            try? FileManager.default.removeItem(at: assetSourceDir)
+        }
+        let target = try writeInjectionTarget(in: repo)
+        let sourceAsset = assetSourceDir.appendingPathComponent("Logo.png")
+        let assetData = Data([0x89, 0x50, 0x4e, 0x47])
+        try assetData.write(to: sourceAsset)
+        try runGit(["init", "-q"], in: repo)
+        try runGit(["add", "."], in: repo)
+        try runGit(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"], in: repo)
+
+        let generated = "Image(\"Logo\")\nText(\"New\")"
+        let preview = TargetAppInjection.preview(.init(
+            repoRoot: repo,
+            targetFile: "Target.swift",
+            generatedSource: generated,
+            expectedHash: SourceSafety.hash(of: target.source),
+            allowDirtyRepo: true,
+            assetCopies: [.init(name: "Logo", sourceURL: sourceAsset, destinationFileName: "Logo.png")],
+            assetDestinationDirectory: "Resources",
+            allowAssetCopy: true))
+
+        XCTAssertFalse(preview.hasBlocker)
+        XCTAssertEqual(preview.assetDependencies, ["Logo"])
+        XCTAssertEqual(preview.assetCopyResults.count, 1)
+        XCTAssertEqual(preview.assetCopyResults.first?.destinationRelativePath, "Resources/Logo.png")
+        XCTAssertEqual(preview.assetCopyResults.first?.byteCount, Int64(assetData.count))
+        XCTAssertFalse(preview.assetCopyResults.first?.didCopy ?? true)
+        XCTAssertTrue(preview.rollbackPlan.contains { $0.contains("rm -f -- Resources/Logo.png") })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: repo.appendingPathComponent("Resources/Logo.png").path))
+
+        let applied = TargetAppInjection.apply(.init(
+            repoRoot: repo,
+            targetFile: "Target.swift",
+            generatedSource: generated,
+            expectedHash: SourceSafety.hash(of: target.source),
+            allowDirtyRepo: true,
+            assetCopies: [.init(name: "Logo", sourceURL: sourceAsset, destinationFileName: "Logo.png")],
+            assetDestinationDirectory: "Resources",
+            allowAssetCopy: true))
+
+        let copiedAsset = repo.appendingPathComponent("Resources/Logo.png")
+        XCTAssertTrue(applied.wroteFile)
+        XCTAssertEqual(applied.assetCopyResults.first?.didCopy, true)
+        XCTAssertEqual(try Data(contentsOf: copiedAsset), assetData)
+        XCTAssertTrue(try String(contentsOf: target.url, encoding: .utf8).contains("Image(\"Logo\")"))
+    }
+
+    func testAssetCopyRequiresExplicitOptIn() throws {
+        let repo = try makeTemporaryDirectory()
+        let assetSourceDir = try makeTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: repo)
+            try? FileManager.default.removeItem(at: assetSourceDir)
+        }
+        let target = try writeInjectionTarget(in: repo)
+        let sourceAsset = assetSourceDir.appendingPathComponent("Logo.png")
+        try Data([1, 2, 3]).write(to: sourceAsset)
+
+        let blocked = TargetAppInjection.apply(.init(
+            repoRoot: repo,
+            targetFile: "Target.swift",
+            generatedSource: "Image(\"Logo\")",
+            expectedHash: SourceSafety.hash(of: target.source),
+            allowDirtyRepo: true,
+            assetCopies: [.init(name: "Logo", sourceURL: sourceAsset, destinationFileName: "Logo.png")],
+            assetDestinationDirectory: "Resources"))
+
+        XCTAssertTrue(blocked.hasBlocker)
+        XCTAssertTrue(blocked.diagnostics.contains { $0.code == .assetCopyBlocked })
+        XCTAssertFalse(blocked.wroteFile)
+        XCTAssertTrue(blocked.assetCopyResults.isEmpty)
+        XCTAssertEqual(try String(contentsOf: target.url, encoding: .utf8), target.source)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: repo.appendingPathComponent("Resources/Logo.png").path))
+    }
+
+    func testAssetCopyBlocksMissingSource() throws {
+        let repo = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let target = try writeInjectionTarget(in: repo)
+        let missingAsset = repo.appendingPathComponent("Missing.png")
+
+        let blocked = TargetAppInjection.preview(.init(
+            repoRoot: repo,
+            targetFile: "Target.swift",
+            generatedSource: "Image(\"Missing\")",
+            expectedHash: SourceSafety.hash(of: target.source),
+            allowDirtyRepo: true,
+            assetCopies: [.init(name: "Missing", sourceURL: missingAsset, destinationFileName: "Missing.png")],
+            assetDestinationDirectory: "Resources",
+            allowAssetCopy: true))
+
+        XCTAssertTrue(blocked.hasBlocker)
+        XCTAssertTrue(blocked.diagnostics.contains { $0.code == .assetSourceMissing })
+        XCTAssertTrue(blocked.assetCopyResults.isEmpty)
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("vua-target-injection-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func writeInjectionTarget(in repo: URL) throws -> (url: URL, source: String) {
+        let target = repo.appendingPathComponent("Target.swift")
+        let source = """
+        import SwiftUI
+        // VUA:BEGIN-INJECTION
+        Text("Old")
+        // VUA:END-INJECTION
+        """
+        try source.write(to: target, atomically: true, encoding: .utf8)
+        return (target, source)
     }
 
     private func runGit(_ args: [String], in directory: URL) throws {

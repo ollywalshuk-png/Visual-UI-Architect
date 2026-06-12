@@ -1571,6 +1571,51 @@ func runChecks() async {
         c.check("p29 apply writes target", appliedInjection.wroteFile && injectedSource.contains("Image(\"Logo\")"))
         c.check("p29 git diff preview", appliedInjection.gitDiff.contains("Text(\"New\")"))
 
+        // Phase 64 — target app asset copying.
+        let assetTarget = injectDir.appendingPathComponent("AssetTarget.swift")
+        let assetTargetSource = """
+        import SwiftUI
+        // VUA:BEGIN-INJECTION
+        Text("Old")
+        // VUA:END-INJECTION
+        """
+        try assetTargetSource.write(to: assetTarget, atomically: true, encoding: .utf8)
+        let sourceAssetDir = fm.temporaryDirectory.appendingPathComponent("vua-p64-assets-\(UUID().uuidString)")
+        try fm.createDirectory(at: sourceAssetDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: sourceAssetDir) }
+        let sourceLogo = sourceAssetDir.appendingPathComponent("Logo.png")
+        let sourceLogoData = Data([0x89, 0x50, 0x4e, 0x47])
+        try sourceLogoData.write(to: sourceLogo)
+        let assetCopyPreview = TargetAppInjection.preview(.init(
+            repoRoot: injectDir, targetFile: "AssetTarget.swift", generatedSource: "Image(\"Logo\")",
+            expectedHash: SourceSafety.hash(of: assetTargetSource), allowDirtyRepo: true,
+            assetCopies: [.init(name: "Logo", sourceURL: sourceLogo, destinationFileName: "Logo.png")],
+            assetDestinationDirectory: "Resources", allowAssetCopy: true))
+        c.check("p64 asset copy preview",
+                !assetCopyPreview.hasBlocker &&
+                assetCopyPreview.assetCopyResults.first?.destinationRelativePath == "Resources/Logo.png" &&
+                assetCopyPreview.assetCopyResults.first?.didCopy == false &&
+                assetCopyPreview.rollbackPlan.contains { $0.contains("rm -f -- Resources/Logo.png") } &&
+                !fm.fileExists(atPath: injectDir.appendingPathComponent("Resources/Logo.png").path))
+        let assetCopyBlocked = TargetAppInjection.preview(.init(
+            repoRoot: injectDir, targetFile: "AssetTarget.swift", generatedSource: "Image(\"Logo\")",
+            expectedHash: SourceSafety.hash(of: assetTargetSource), allowDirtyRepo: true,
+            assetCopies: [.init(name: "Logo", sourceURL: sourceLogo, destinationFileName: "Logo.png")],
+            assetDestinationDirectory: "Resources"))
+        c.check("p64 asset copy requires opt-in",
+                assetCopyBlocked.hasBlocker &&
+                assetCopyBlocked.diagnostics.contains { $0.code == .assetCopyBlocked })
+        let assetCopyApplied = TargetAppInjection.apply(.init(
+            repoRoot: injectDir, targetFile: "AssetTarget.swift", generatedSource: "Image(\"Logo\")",
+            expectedHash: SourceSafety.hash(of: assetTargetSource), allowDirtyRepo: true,
+            assetCopies: [.init(name: "Logo", sourceURL: sourceLogo, destinationFileName: "Logo.png")],
+            assetDestinationDirectory: "Resources", allowAssetCopy: true))
+        let copiedLogo = injectDir.appendingPathComponent("Resources/Logo.png")
+        c.check("p64 asset copy apply",
+                assetCopyApplied.wroteFile &&
+                assetCopyApplied.assetCopyResults.first?.didCopy == true &&
+                ((try? Data(contentsOf: copiedLogo)) == sourceLogoData))
+
         // Phase 50 — target app injection hardening.
         let outsideTarget = injectDir.deletingLastPathComponent().appendingPathComponent("Outside-\(UUID().uuidString).swift")
         let outsideOriginal = "Text(\"Outside\")"
