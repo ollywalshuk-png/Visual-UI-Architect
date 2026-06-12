@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 import VUACore
 @testable import RepositoryEngine
@@ -82,7 +83,7 @@ final class RoundTripTests: XCTestCase {
                     if enabled {
                         List {
                             ForEach(viewModel.tracks, id: \.id) { track in
-                                Button(track.name) { viewModel.play(track) }
+                                TrackRow(track: track)
                                     .appCardStyle()
                             }
                         }
@@ -97,9 +98,15 @@ final class RoundTripTests: XCTestCase {
                 }
             }
         }
+
+        struct TrackRow: View {
+            let track: Track
+            var body: some View { Text(track.name) }
+        }
         """#
 
-        let view = SwiftUISemanticAnalyzer().analyze(source: source, filePath: "PlayerScreen.swift").first
+        let view = SwiftUISemanticAnalyzer().analyze(source: source, filePath: "PlayerScreen.swift")
+            .first { $0.viewName == "PlayerScreen" }
         XCTAssertEqual(view?.viewName, "PlayerScreen")
         XCTAssertTrue(view?.properties.contains { $0.name == "path" && $0.wrappers.contains(.state) && $0.isNavigationPath } == true)
         XCTAssertTrue(view?.properties.contains { $0.name == "enabled" && $0.wrappers.contains(.binding) } == true)
@@ -116,5 +123,53 @@ final class RoundTripTests: XCTestCase {
         XCTAssertTrue(view?.customViewCalls.contains("SettingsScreen") == true)
         XCTAssertTrue(view?.customLayoutTypes.contains("MasonryLayout") == true)
         XCTAssertTrue(view?.observableTypes.contains("PlayerViewModel") == true)
+
+        let relationships = view?.relationships ?? []
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .viewModel && $0.source == "viewModel" && $0.target == "PlayerViewModel"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .environmentObject && $0.source == "session" && $0.target == "SessionStore"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .navigationPath && $0.source == "path" && $0.target == "NavigationPath"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .dataSource && $0.source == "viewModel.tracks" && $0.target == "track"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .navigationDestination && $0.target == "Track"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .modalPresentation && $0.source == "sheet" && $0.target == "SettingsScreen"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .customView && $0.target == "TrackRow" && $0.detail == "local view"
+        })
+        XCTAssertTrue(relationships.contains {
+            $0.kind == .asyncWork && $0.source == "task" && ($0.detail ?? "").contains("viewModel.load")
+        })
+    }
+
+    func testSemanticViewDecodesLegacyPayloadWithoutRelationships() throws {
+        let json = #"""
+        {
+          "viewName": "LegacyScreen",
+          "filePath": "LegacyScreen.swift",
+          "properties": [],
+          "forEachLoops": [],
+          "navigation": [],
+          "asyncHooks": [],
+          "conditionalBranchCount": 0,
+          "customModifiers": [],
+          "customViewCalls": [],
+          "customLayoutTypes": [],
+          "observableTypes": []
+        }
+        """#
+
+        let decoded = try JSONDecoder().decode(SwiftUISemanticView.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.viewName, "LegacyScreen")
+        XCTAssertEqual(decoded.relationships, [])
     }
 }

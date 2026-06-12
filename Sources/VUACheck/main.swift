@@ -353,6 +353,19 @@ func runChecks() async {
             semantic?.customModifiers.contains("appCardStyle") == true &&
             semantic?.customViewCalls.contains("DetailScreen") == true &&
             semantic?.customLayoutTypes.contains("MasonryLayout") == true)
+    c.check("p55 semantic builds relationship graph",
+            semantic?.relationships.contains {
+                $0.kind == .viewModel && $0.source == "viewModel" && $0.target == "PlayerViewModel"
+            } == true &&
+            semantic?.relationships.contains {
+                $0.kind == .environmentObject && $0.source == "session" && $0.target == "SessionStore"
+            } == true &&
+            semantic?.relationships.contains {
+                $0.kind == .dataSource && $0.source == "viewModel.tracks" && $0.target == "track"
+            } == true &&
+            semantic?.relationships.contains {
+                $0.kind == .modalPresentation && $0.source == "sheet" && $0.target == "SettingsScreen"
+            } == true)
 
     // MARK: Safe-apply pipeline (real file IO + git diff)
     let fm = FileManager.default
