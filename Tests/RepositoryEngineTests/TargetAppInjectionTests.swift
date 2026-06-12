@@ -95,9 +95,91 @@ final class TargetAppInjectionTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), generated)
     }
 
+    func testNewScreenCreationRequiresOptInAndWritesOwnershipMarkers() throws {
+        let repo = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        try runGit(["init", "-q"], in: repo)
+        let target = repo.appendingPathComponent("Sources/App/NewScreen.swift")
+        let generated = """
+        import SwiftUI
+
+        struct NewScreen: View {
+            var body: some View { Text("New") }
+        }
+        """
+
+        let blocked = TargetAppInjection.preview(.init(
+            repoRoot: repo,
+            targetFile: "Sources/App/NewScreen.swift",
+            generatedSource: generated,
+            allowDirtyRepo: true))
+
+        XCTAssertEqual(blocked.replacementMode, .fullFile)
+        XCTAssertTrue(blocked.hasBlocker)
+        XCTAssertTrue(blocked.diagnostics.contains { $0.code == .createFileBlocked })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+
+        let preview = TargetAppInjection.preview(.init(
+            repoRoot: repo,
+            targetFile: "Sources/App/NewScreen.swift",
+            generatedSource: generated,
+            allowDirtyRepo: true,
+            allowCreateFile: true))
+
+        XCTAssertEqual(preview.replacementMode, .newFile)
+        XCTAssertFalse(preview.hasBlocker)
+        XCTAssertTrue(preview.previewDiff.contains("// VUA:BEGIN-GENERATED-FILE"))
+        XCTAssertTrue(preview.previewDiff.contains("struct NewScreen: View"))
+        XCTAssertTrue(preview.rollbackPlan.contains { $0.contains("rm -f -- Sources/App/NewScreen.swift") })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+
+        let applied = TargetAppInjection.apply(.init(
+            repoRoot: repo,
+            targetFile: "Sources/App/NewScreen.swift",
+            generatedSource: generated,
+            allowDirtyRepo: true,
+            allowCreateFile: true))
+
+        XCTAssertEqual(applied.replacementMode, .newFile)
+        XCTAssertTrue(applied.wroteFile)
+        let written = try String(contentsOf: target, encoding: .utf8)
+        XCTAssertTrue(written.contains("// VUA:BEGIN-GENERATED-FILE"))
+        XCTAssertTrue(written.contains("// VUA:Owner=Visual UI Architect"))
+        XCTAssertTrue(written.contains("struct NewScreen: View"))
+        XCTAssertTrue(written.contains("// VUA:END-GENERATED-FILE"))
+    }
+
+    func testEmptyExistingSwiftFileIsNotTreatedAsNewFile() throws {
+        let repo = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let target = repo.appendingPathComponent("Empty.swift")
+        try "".write(to: target, atomically: true, encoding: .utf8)
+
+        let blocked = TargetAppInjection.preview(.init(
+            repoRoot: repo,
+            targetFile: "Empty.swift",
+            generatedSource: "import SwiftUI\n",
+            allowDirtyRepo: true))
+
+        XCTAssertEqual(blocked.replacementMode, .fullFile)
+        XCTAssertTrue(blocked.diagnostics.contains { $0.code == .fullFileReplacementBlocked })
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("vua-target-injection-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func runGit(_ args: [String], in directory: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["git"] + args
+        process.currentDirectoryURL = directory
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
     }
 }
