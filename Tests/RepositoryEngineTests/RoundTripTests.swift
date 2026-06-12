@@ -55,4 +55,66 @@ final class RoundTripTests: XCTestCase {
         XCTAssertEqual(play!.frame.origin.x, 200, accuracy: 0.5)
         XCTAssertEqual(play!.frame.origin.y, 300, accuracy: 0.5)
     }
+
+    func testSemanticAnalyzerExtractsStateNavigationBindingsAndCustomSignals() {
+        let source = #"""
+        import SwiftUI
+        import Observation
+
+        @Observable
+        final class PlayerViewModel {
+            var tracks: [Track] = []
+            func load() async {}
+            func play(_ track: Track) {}
+        }
+
+        struct MasonryLayout: Layout {}
+
+        struct PlayerScreen: View {
+            @State private var path = NavigationPath()
+            @State private var isPresented = false
+            @Binding var enabled: Bool
+            @EnvironmentObject var session: SessionStore
+            @StateObject private var viewModel = PlayerViewModel()
+
+            var body: some View {
+                NavigationStack(path: $path) {
+                    if enabled {
+                        List {
+                            ForEach(viewModel.tracks, id: \.id) { track in
+                                Button(track.name) { viewModel.play(track) }
+                                    .appCardStyle()
+                            }
+                        }
+                        .navigationDestination(for: Track.self) { track in
+                            DetailScreen(track: track)
+                        }
+                        .sheet(isPresented: $isPresented) {
+                            SettingsScreen()
+                        }
+                        .task { await viewModel.load() }
+                    }
+                }
+            }
+        }
+        """#
+
+        let view = SwiftUISemanticAnalyzer().analyze(source: source, filePath: "PlayerScreen.swift").first
+        XCTAssertEqual(view?.viewName, "PlayerScreen")
+        XCTAssertTrue(view?.properties.contains { $0.name == "path" && $0.wrappers.contains(.state) && $0.isNavigationPath } == true)
+        XCTAssertTrue(view?.properties.contains { $0.name == "enabled" && $0.wrappers.contains(.binding) } == true)
+        XCTAssertTrue(view?.properties.contains { $0.name == "session" && $0.wrappers.contains(.environmentObject) } == true)
+        XCTAssertTrue(view?.viewModelProperties.contains { $0.name == "viewModel" } == true)
+        XCTAssertTrue(view?.forEachLoops.contains { $0.dataExpression == "viewModel.tracks" && $0.idExpression == "\\.id" && $0.isModelBacked } == true)
+        XCTAssertTrue(view?.navigation.contains { $0.kind == "NavigationStack" && $0.pathBinding == "path" } == true)
+        XCTAssertTrue(view?.navigation.contains { $0.kind == "navigationDestination" && $0.destinationType == "Track" } == true)
+        XCTAssertTrue(view?.navigation.contains { $0.kind == "sheet" } == true)
+        XCTAssertTrue(view?.asyncHooks.contains { $0.kind == "task" && $0.expression.contains("viewModel.load") } == true)
+        XCTAssertEqual(view?.conditionalBranchCount, 1)
+        XCTAssertTrue(view?.customModifiers.contains("appCardStyle") == true)
+        XCTAssertTrue(view?.customViewCalls.contains("DetailScreen") == true)
+        XCTAssertTrue(view?.customViewCalls.contains("SettingsScreen") == true)
+        XCTAssertTrue(view?.customLayoutTypes.contains("MasonryLayout") == true)
+        XCTAssertTrue(view?.observableTypes.contains("PlayerViewModel") == true)
+    }
 }

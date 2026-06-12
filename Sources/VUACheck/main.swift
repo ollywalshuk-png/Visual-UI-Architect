@@ -271,6 +271,54 @@ func runChecks() async {
             advancedImportLayers.contains { $0.name == "CustomRepresentable" && $0.isLocked })
     c.check("p45 unsupported placeholders carry diagnostics",
             advancedImportLayers.contains { ($0.notes ?? "").contains("preserved as a locked placeholder") })
+    let semanticSource = #"""
+    import SwiftUI
+    import Observation
+
+    @Observable final class PlayerViewModel {
+        var tracks: [Track] = []
+        func load() async {}
+    }
+    struct MasonryLayout: Layout {}
+    struct SemanticScreen: View {
+        @State private var path = NavigationPath()
+        @Binding var enabled: Bool
+        @EnvironmentObject var session: SessionStore
+        @StateObject private var viewModel = PlayerViewModel()
+
+        var body: some View {
+            NavigationStack(path: $path) {
+                if enabled {
+                    ForEach(viewModel.tracks, id: \.id) { track in
+                        Button(track.name) {}
+                            .appCardStyle()
+                    }
+                    .navigationDestination(for: Track.self) { track in DetailScreen(track: track) }
+                    .sheet(isPresented: .constant(false)) { SettingsScreen() }
+                    .task { await viewModel.load() }
+                }
+            }
+        }
+    }
+    """#
+    let semantic = SwiftUISemanticAnalyzer().analyze(source: semanticSource, filePath: "Semantic.swift").first
+    c.check("p47 semantic detects state binding environment",
+            semantic?.properties.contains { $0.name == "path" && $0.wrappers.contains(.state) && $0.isNavigationPath } == true &&
+            semantic?.properties.contains { $0.name == "enabled" && $0.wrappers.contains(.binding) } == true &&
+            semantic?.properties.contains { $0.name == "session" && $0.wrappers.contains(.environmentObject) } == true)
+    c.check("p47 semantic detects view model observable",
+            semantic?.viewModelProperties.contains { $0.name == "viewModel" } == true &&
+            semantic?.observableTypes.contains("PlayerViewModel") == true)
+    c.check("p47 semantic detects foreach navigation async",
+            semantic?.forEachLoops.contains { $0.dataExpression == "viewModel.tracks" && $0.isModelBacked } == true &&
+            semantic?.navigation.contains { $0.kind == "NavigationStack" && $0.pathBinding == "path" } == true &&
+            semantic?.navigation.contains { $0.kind == "navigationDestination" && $0.destinationType == "Track" } == true &&
+            semantic?.asyncHooks.contains { $0.kind == "task" } == true)
+    c.check("p47 semantic detects custom branches and layouts",
+            semantic?.conditionalBranchCount == 1 &&
+            semantic?.customModifiers.contains("appCardStyle") == true &&
+            semantic?.customViewCalls.contains("DetailScreen") == true &&
+            semantic?.customLayoutTypes.contains("MasonryLayout") == true)
 
     // MARK: Safe-apply pipeline (real file IO + git diff)
     let fm = FileManager.default
