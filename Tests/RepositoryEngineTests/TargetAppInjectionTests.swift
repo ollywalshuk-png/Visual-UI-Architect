@@ -165,10 +165,160 @@ final class TargetAppInjectionTests: XCTestCase {
         XCTAssertTrue(blocked.diagnostics.contains { $0.code == .fullFileReplacementBlocked })
     }
 
+    func testRouteInsertionPreviewAndApplyUpdatesRouteFile() throws {
+        let repo = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent("Sources/App"), withIntermediateDirectories: true)
+        let target = repo.appendingPathComponent("Sources/App/Host.swift")
+        let routes = repo.appendingPathComponent("Sources/App/Routes.swift")
+        let targetSource = """
+        import SwiftUI
+
+        struct Host: View {
+            var body: some View {
+                // VUA:BEGIN-INJECTION
+                Text("Old")
+                // VUA:END-INJECTION
+            }
+        }
+        """
+        let routeSource = """
+        import SwiftUI
+
+        enum Routes {
+            static let all = [
+                // VUA:BEGIN-ROUTES
+                Route("home", HomeScreen())
+                // VUA:END-ROUTES
+            ]
+        }
+        """
+        let generated = "Text(\"New\")"
+        let registration = "        Route(\"new\", NewScreen())"
+        try targetSource.write(to: target, atomically: true, encoding: .utf8)
+        try routeSource.write(to: routes, atomically: true, encoding: .utf8)
+        try runGit(["init", "-q"], in: repo)
+        try runGit(["add", "."], in: repo)
+        try runGit(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"], in: repo)
+
+        let preview = TargetAppInjection.preview(.init(
+            repoRoot: repo,
+            targetFile: "Sources/App/Host.swift",
+            generatedSource: generated,
+            expectedHash: SourceSafety.hash(of: targetSource),
+            allowDirtyRepo: true,
+            routeFile: "Sources/App/Routes.swift",
+            routeRegistration: registration,
+            allowRouteInsertion: true))
+
+        XCTAssertFalse(preview.hasBlocker)
+        XCTAssertTrue(preview.routeInserted)
+        XCTAssertEqual(preview.routeURL, routes.standardizedFileURL.resolvingSymlinksInPath())
+        XCTAssertTrue(preview.previewDiff.contains("Text(\"New\")"))
+        XCTAssertTrue(preview.previewDiff.contains("Route(\"new\", NewScreen())"))
+        XCTAssertTrue(preview.routePreviewDiff.contains("Route(\"new\", NewScreen())"))
+        XCTAssertTrue(preview.rollbackPlan.contains { $0.contains("git restore -- Sources/App/Host.swift") })
+        XCTAssertTrue(preview.rollbackPlan.contains { $0.contains("git restore -- Sources/App/Routes.swift") })
+        XCTAssertEqual(try String(contentsOf: routes, encoding: .utf8), routeSource)
+
+        let applied = TargetAppInjection.apply(.init(
+            repoRoot: repo,
+            targetFile: "Sources/App/Host.swift",
+            generatedSource: generated,
+            expectedHash: SourceSafety.hash(of: targetSource),
+            allowDirtyRepo: true,
+            routeFile: "Sources/App/Routes.swift",
+            routeRegistration: registration,
+            allowRouteInsertion: true))
+
+        XCTAssertTrue(applied.wroteFile)
+        XCTAssertTrue(applied.routeInserted)
+        XCTAssertTrue(try String(contentsOf: target, encoding: .utf8).contains("Text(\"New\")"))
+        XCTAssertTrue(try String(contentsOf: routes, encoding: .utf8).contains("Route(\"new\", NewScreen())"))
+        XCTAssertTrue(applied.gitDiff.contains("Text(\"New\")"))
+        XCTAssertTrue(applied.gitDiff.contains("Route(\"new\", NewScreen())"))
+    }
+
+    func testRouteInsertionRequiresExplicitOptIn() throws {
+        let repo = try makeRouteFixture()
+        defer { try? FileManager.default.removeItem(at: repo.root) }
+
+        let blocked = TargetAppInjection.apply(.init(
+            repoRoot: repo.root,
+            targetFile: "Host.swift",
+            generatedSource: "Text(\"New\")",
+            expectedHash: SourceSafety.hash(of: repo.targetSource),
+            allowDirtyRepo: true,
+            routeFile: "Routes.swift",
+            routeRegistration: "Route(\"new\", NewScreen())"))
+
+        XCTAssertTrue(blocked.hasBlocker)
+        XCTAssertTrue(blocked.diagnostics.contains { $0.code == .routeInsertionBlocked })
+        XCTAssertFalse(blocked.wroteFile)
+        XCTAssertFalse(blocked.routeInserted)
+        XCTAssertEqual(try String(contentsOf: repo.targetURL, encoding: .utf8), repo.targetSource)
+        XCTAssertEqual(try String(contentsOf: repo.routeURL, encoding: .utf8), repo.routeSource)
+    }
+
+    func testRouteInsertionRequiresRouteMarkers() throws {
+        let repo = try makeRouteFixture(routeSource: "import SwiftUI\nlet routes: [Any] = []\n")
+        defer { try? FileManager.default.removeItem(at: repo.root) }
+
+        let blocked = TargetAppInjection.preview(.init(
+            repoRoot: repo.root,
+            targetFile: "Host.swift",
+            generatedSource: "Text(\"New\")",
+            expectedHash: SourceSafety.hash(of: repo.targetSource),
+            allowDirtyRepo: true,
+            routeFile: "Routes.swift",
+            routeRegistration: "Route(\"new\", NewScreen())",
+            allowRouteInsertion: true))
+
+        XCTAssertTrue(blocked.hasBlocker)
+        XCTAssertTrue(blocked.diagnostics.contains { $0.code == .routeInsertionBlocked })
+        XCTAssertFalse(blocked.routeInserted)
+        XCTAssertTrue(blocked.routePreviewDiff.isEmpty)
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("vua-target-injection-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func makeRouteFixture(routeSource: String? = nil) throws -> (
+        root: URL,
+        targetURL: URL,
+        routeURL: URL,
+        targetSource: String,
+        routeSource: String
+    ) {
+        let repo = try makeTemporaryDirectory()
+        let target = repo.appendingPathComponent("Host.swift")
+        let routes = repo.appendingPathComponent("Routes.swift")
+        let targetSource = """
+        import SwiftUI
+
+        struct Host: View {
+            var body: some View {
+                // VUA:BEGIN-INJECTION
+                Text("Old")
+                // VUA:END-INJECTION
+            }
+        }
+        """
+        let resolvedRouteSource = routeSource ?? """
+        import SwiftUI
+
+        let routes = [
+            // VUA:BEGIN-ROUTES
+            Route("home", HomeScreen())
+            // VUA:END-ROUTES
+        ]
+        """
+        try targetSource.write(to: target, atomically: true, encoding: .utf8)
+        try resolvedRouteSource.write(to: routes, atomically: true, encoding: .utf8)
+        return (repo, target, routes, targetSource, resolvedRouteSource)
     }
 
     private func runGit(_ args: [String], in directory: URL) throws {
