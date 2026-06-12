@@ -7,6 +7,8 @@ struct TargetInjectionView: View {
     @EnvironmentObject var store: DocumentStore
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPath = ""
+    @State private var newFilePath = "Sources/App/GeneratedScreen.swift"
+    @State private var createNewFile = false
     @State private var allowDirtyRepo = false
     @State private var allowFullFileReplacement = false
     @State private var runBuild = true
@@ -22,12 +24,18 @@ struct TargetInjectionView: View {
             Divider()
             Form {
                 Section("Target") {
-                    Picker("File", selection: $selectedPath) {
-                        Text("Select target").tag("")
-                        ForEach(swiftFiles) { file in Text(file.relativePath).tag(file.relativePath) }
+                    Toggle("Create new Swift file", isOn: $createNewFile)
+                    if createNewFile {
+                        TextField("Sources/App/GeneratedScreen.swift", text: $newFilePath)
+                    } else {
+                        Picker("File", selection: $selectedPath) {
+                            Text("Select target").tag("")
+                            ForEach(swiftFiles) { file in Text(file.relativePath).tag(file.relativePath) }
+                        }
                     }
                     Toggle("Allow dirty repository", isOn: $allowDirtyRepo)
                     Toggle("Allow full-file replacement", isOn: $allowFullFileReplacement)
+                        .disabled(createNewFile)
                     Toggle("Run swift build after apply", isOn: $runBuild)
                 }
                 if let result {
@@ -96,19 +104,24 @@ struct TargetInjectionView: View {
         .padding()
     }
 
-    private var canRun: Bool { store.repositoryRoot != nil && !selectedPath.isEmpty }
+    private var targetPath: String {
+        createNewFile ? newFilePath.trimmingCharacters(in: .whitespacesAndNewlines) : selectedPath
+    }
+
+    private var canRun: Bool { store.repositoryRoot != nil && !targetPath.isEmpty }
 
     private func run(write: Bool) {
         guard let root = store.repositoryRoot,
               let generated = try? CodeGenService().generate(store.document).contents else { return }
         let request = TargetAppInjection.Request(
             repoRoot: root,
-            targetFile: selectedPath,
+            targetFile: targetPath,
             generatedSource: generated,
-            expectedHash: currentHash(root: root, path: selectedPath),
+            expectedHash: createNewFile ? nil : currentHash(root: root, path: targetPath),
             allowDirtyRepo: allowDirtyRepo,
             runBuild: runBuild,
-            allowFullFileReplacement: allowFullFileReplacement)
+            allowFullFileReplacement: !createNewFile && allowFullFileReplacement,
+            allowCreateFile: createNewFile)
         result = write ? TargetAppInjection.apply(request) : TargetAppInjection.preview(request)
     }
 

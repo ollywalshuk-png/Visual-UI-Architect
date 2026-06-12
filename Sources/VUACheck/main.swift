@@ -1601,6 +1601,41 @@ func runChecks() async {
                 fullFileAllowed.diagnostics.contains { $0.code == .noInjectionMarker } &&
                 fullFileAfterAllowed == fullFileGenerated)
 
+        let newScreenTarget = injectDir.appendingPathComponent("Sources/App/NewScreen.swift")
+        let newScreenGenerated = """
+        import SwiftUI
+
+        struct NewScreen: View {
+            var body: some View { Text("New") }
+        }
+        """
+        let newScreenBlocked = TargetAppInjection.preview(.init(
+            repoRoot: injectDir, targetFile: "Sources/App/NewScreen.swift",
+            generatedSource: newScreenGenerated, allowDirtyRepo: true))
+        c.check("p57 new screen creation requires opt-in",
+                newScreenBlocked.replacementMode == .fullFile &&
+                newScreenBlocked.diagnostics.contains { $0.code == .createFileBlocked } &&
+                !fm.fileExists(atPath: newScreenTarget.path))
+        let newScreenPreview = TargetAppInjection.preview(.init(
+            repoRoot: injectDir, targetFile: "Sources/App/NewScreen.swift",
+            generatedSource: newScreenGenerated, allowDirtyRepo: true,
+            allowCreateFile: true))
+        c.check("p57 new screen preview has ownership markers",
+                newScreenPreview.replacementMode == .newFile &&
+                !newScreenPreview.hasBlocker &&
+                newScreenPreview.previewDiff.contains("// VUA:BEGIN-GENERATED-FILE") &&
+                newScreenPreview.rollbackPlan.contains { $0.contains("rm -f -- Sources/App/NewScreen.swift") })
+        let newScreenApplied = TargetAppInjection.apply(.init(
+            repoRoot: injectDir, targetFile: "Sources/App/NewScreen.swift",
+            generatedSource: newScreenGenerated, allowDirtyRepo: true,
+            allowCreateFile: true))
+        let newScreenAfter = (try? String(contentsOf: newScreenTarget, encoding: .utf8)) ?? ""
+        c.check("p57 new screen apply writes owned file",
+                newScreenApplied.wroteFile &&
+                newScreenApplied.replacementMode == .newFile &&
+                newScreenAfter.contains("// VUA:Owner=Visual UI Architect") &&
+                newScreenAfter.contains("struct NewScreen: View"))
+
         // Phase 30 — existing app view graph.
         let graphDir = fm.temporaryDirectory.appendingPathComponent("vua-p30-\(UUID().uuidString)")
         try fm.createDirectory(at: graphDir.appendingPathComponent("Sources/App"), withIntermediateDirectories: true)
