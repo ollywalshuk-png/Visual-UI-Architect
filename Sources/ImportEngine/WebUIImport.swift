@@ -21,11 +21,19 @@ public enum WebUIImport {
             }
             guard isCandidateFile(url, framework: framework),
                   let source = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            candidates.append(contentsOf: self.candidates(
-                inSource: source,
-                filePath: url.path,
-                repoRoot: root.path,
-                preferredName: viewName(for: url, source: source)))
+            if framework == .flutter {
+                candidates.append(contentsOf: FlutterUIImport.candidates(
+                    inSource: source,
+                    filePath: url.path,
+                    repoRoot: root.path,
+                    preferredName: viewName(for: url, source: source)))
+            } else {
+                candidates.append(contentsOf: self.candidates(
+                    inSource: source,
+                    filePath: url.path,
+                    repoRoot: root.path,
+                    preferredName: viewName(for: url, source: source)))
+            }
         }
         return candidates.sorted { lhs, rhs in
             if lhs.confidence == rhs.confidence { return lhs.viewName < rhs.viewName }
@@ -68,6 +76,9 @@ public enum WebUIImport {
 
     public static func importCandidate(_ candidate: ExistingUIImport.Candidate) -> ExistingUIImport.Imported? {
         let url = URL(fileURLWithPath: candidate.filePath)
+        if url.pathExtension.lowercased() == "dart" {
+            return FlutterUIImport.importCandidate(candidate)
+        }
         guard let source = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         let parser = WebDOMParser()
         let mapper = WebLayerMapper(filePath: candidate.filePath)
@@ -89,6 +100,8 @@ public enum WebUIImport {
             return ["html", "htm"].contains(ext)
         case .react, .electron:
             return ["html", "htm", "jsx", "tsx"].contains(ext)
+        case .flutter:
+            return ext == "dart"
         default:
             return false
         }
@@ -104,6 +117,12 @@ public enum WebUIImport {
             pattern: #"(?:export\s+default\s+function|function|const)\s+([A-Z][A-Za-z0-9_]*)"#
         ) {
             return component
+        }
+        if let flutterWidget = firstMatch(
+            in: source,
+            pattern: #"class\s+([A-Z][A-Za-z0-9_]*)\s+extends\s+(?:StatelessWidget|StatefulWidget)"#
+        ) {
+            return flutterWidget
         }
         if let title = firstMatch(in: source, pattern: #"<title[^>]*>([^<]+)</title>"#) {
             return safeTypeName(title)
@@ -138,11 +157,506 @@ private struct WebLayerResult {
     var hasAnchors: Bool
 }
 
+private enum FlutterUIImport {
+    static func candidates(inSource source: String, filePath: String,
+                           repoRoot: String? = nil,
+                           preferredName: String? = nil) -> [ExistingUIImport.Candidate] {
+        let result = layerResult(source: source, filePath: filePath)
+        guard result.supported + result.unsupported > 0 else { return [] }
+
+        var warnings = ["Static Flutter import: widget tree, common controls, and literal sizing are editable; Dart state, custom render objects, themes, and runtime layout remain source-owned."]
+        if result.unsupported > 0 {
+            warnings.append("\(result.unsupported) unsupported Flutter widget(s) will import as locked placeholders.")
+        }
+        if !result.hasAnchors {
+            warnings.append("No Key/ValueKey anchors were found; imported layers are editable but source apply remains limited.")
+        }
+
+        let total = result.supported + result.unsupported
+        return [
+            ExistingUIImport.Candidate(
+                viewName: preferredName ?? "ImportedFlutterView",
+                filePath: filePath,
+                repoRoot: repoRoot,
+                confidence: total == 0 ? 0 : Double(result.supported) / Double(total),
+                supportedElementCount: result.supported,
+                unsupportedElementCount: result.unsupported,
+                hasAnchors: result.hasAnchors,
+                isPreviewOnly: false,
+                warnings: warnings)
+        ]
+    }
+
+    static func importCandidate(_ candidate: ExistingUIImport.Candidate) -> ExistingUIImport.Imported? {
+        guard let source = try? String(contentsOf: URL(fileURLWithPath: candidate.filePath), encoding: .utf8) else {
+            return nil
+        }
+        let result = layerResult(source: source, filePath: candidate.filePath)
+        guard !result.layers.isEmpty else { return nil }
+        return ExistingUIImport.Imported(
+            view: ParsedView(typeName: candidate.viewName, roots: result.layers, filePath: candidate.filePath),
+            sourceHash: ExistingUIImport.sourceHash(source),
+            hasAnchors: false)
+    }
+
+    private static func layerResult(source: String, filePath: String) -> WebLayerResult {
+        let parseSource = buildBodies(in: source).joined(separator: "\n\n").nilIfBlank ?? source
+        let nodes = FlutterWidgetParser().parse(parseSource)
+        return FlutterLayerMapper(filePath: filePath).map(nodes)
+    }
+
+    private static func buildBodies(in source: String) -> [String] {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"\bWidget\s+build\s*\([^)]*\)\s*\{"#,
+            options: []
+        ) else { return [] }
+        let ns = source as NSString
+        let range = NSRange(location: 0, length: ns.length)
+        return regex.matches(in: source, options: [], range: range).compactMap { match in
+            guard let matchRange = Range(match.range, in: source) else { return nil }
+            let openBrace = source.index(before: matchRange.upperBound)
+            guard source[openBrace] == "{",
+                  let closeBrace = matchingBrace(in: source, open: openBrace) else { return nil }
+            return String(source[source.index(after: openBrace)..<closeBrace])
+        }
+    }
+
+    private static func matchingBrace(in source: String, open: String.Index) -> String.Index? {
+        var depth = 0
+        var index = open
+        while index < source.endIndex {
+            let character = source[index]
+            if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0 { return index }
+            }
+            index = source.index(after: index)
+        }
+        return nil
+    }
+}
+
+private struct FlutterNode {
+    var widget: String
+    var arguments: String
+    var children: [FlutterNode]
+}
+
+private struct FlutterWidgetParser {
+    private let knownWidgets: Set<String> = [
+        "MaterialApp", "CupertinoApp", "Scaffold", "SafeArea", "Container", "SizedBox", "Padding",
+        "Center", "Align", "Column", "Row", "Stack", "Card", "Expanded", "Flexible", "ListView",
+        "GridView", "SingleChildScrollView", "Text", "ElevatedButton", "TextButton", "OutlinedButton",
+        "FilledButton", "FloatingActionButton", "IconButton", "InkWell", "GestureDetector", "Slider",
+        "Switch", "Checkbox", "Image", "Icon", "CircleAvatar", "TextField", "TextFormField",
+        "DropdownButton", "CustomPaint"
+    ]
+
+    private let excludedConstructors: Set<String> = [
+        "TextStyle", "EdgeInsets", "BoxDecoration", "DecorationImage", "AssetImage", "NetworkImage",
+        "Color", "Colors", "ValueKey", "ObjectKey", "Key", "BorderRadius", "Radius", "Size", "Offset",
+        "BoxShadow", "LinearGradient", "ThemeData", "InputDecoration"
+    ]
+
+    func parse(_ source: String) -> [FlutterNode] {
+        parseNodes(in: source)
+    }
+
+    private func parseNodes(in source: String) -> [FlutterNode] {
+        var nodes: [FlutterNode] = []
+        var index = source.startIndex
+        while index < source.endIndex {
+            guard let call = nextWidgetCall(in: source, from: index) else { break }
+            guard let close = matchingParen(in: source, open: call.openParen) else {
+                index = source.index(after: call.openParen)
+                continue
+            }
+            let arguments = String(source[source.index(after: call.openParen)..<close])
+            nodes.append(FlutterNode(
+                widget: normalizedWidget(call.name),
+                arguments: arguments,
+                children: parseNodes(in: arguments)))
+            index = source.index(after: close)
+        }
+        return nodes
+    }
+
+    private func nextWidgetCall(in source: String, from start: String.Index) -> (name: String, openParen: String.Index)? {
+        var index = start
+        while index < source.endIndex {
+            guard isIdentifierStart(source[index]) else {
+                index = source.index(after: index)
+                continue
+            }
+            let nameStart = index
+            index = source.index(after: index)
+            while index < source.endIndex, isIdentifierPart(source[index]) {
+                index = source.index(after: index)
+            }
+            let name = String(source[nameStart..<index])
+            var probe = index
+            while probe < source.endIndex, source[probe].isWhitespace {
+                probe = source.index(after: probe)
+            }
+            if probe < source.endIndex, source[probe] == "(", isWidgetCall(name) {
+                return (name, probe)
+            }
+            index = probe
+        }
+        return nil
+    }
+
+    private func isWidgetCall(_ name: String) -> Bool {
+        let widget = normalizedWidget(name)
+        if excludedConstructors.contains(widget) { return false }
+        if knownWidgets.contains(widget) { return true }
+        return widget.first?.isUppercase == true
+    }
+
+    private func normalizedWidget(_ name: String) -> String {
+        name.split(separator: ".").first.map(String.init) ?? name
+    }
+
+    private func matchingParen(in source: String, open: String.Index) -> String.Index? {
+        var depth = 0
+        var quote: Character?
+        var escaped = false
+        var index = open
+        while index < source.endIndex {
+            let character = source[index]
+            if let currentQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == currentQuote {
+                    quote = nil
+                }
+            } else if character == "\"" || character == "'" {
+                quote = character
+            } else if character == "(" {
+                depth += 1
+            } else if character == ")" {
+                depth -= 1
+                if depth == 0 { return index }
+            }
+            index = source.index(after: index)
+        }
+        return nil
+    }
+
+    private func isIdentifierStart(_ character: Character) -> Bool {
+        character == "_" || character.isLetter
+    }
+
+    private func isIdentifierPart(_ character: Character) -> Bool {
+        character == "_" || character == "." || character.isLetter || character.isNumber
+    }
+}
+
+private struct FlutterLayerMapper {
+    let filePath: String
+
+    func map(_ nodes: [FlutterNode]) -> WebLayerResult {
+        var supported = 0
+        var unsupported = 0
+        var hasAnchors = false
+        var layers: [Layer] = []
+
+        for node in nodes {
+            let mapped = map(node)
+            supported += mapped.supported
+            unsupported += mapped.unsupported
+            hasAnchors = hasAnchors || mapped.hasAnchors
+            layers.append(contentsOf: mapped.layers)
+        }
+
+        if layers.count == 1 {
+            var root = layers[0]
+            ensureRootFrame(&root)
+            return WebLayerResult(layers: [root], supported: supported, unsupported: unsupported, hasAnchors: hasAnchors)
+        }
+
+        var root = Layer(
+            name: "Flutter Widget Tree",
+            kind: .container,
+            frame: VRect(x: 24, y: 24, width: 640, height: max(240, Double(layers.count) * 64 + 32)),
+            tags: ["import:flutter"],
+            children: layers)
+        layoutChildren(of: &root)
+        return WebLayerResult(layers: [root], supported: supported, unsupported: unsupported, hasAnchors: hasAnchors)
+    }
+
+    private func map(_ node: FlutterNode) -> WebLayerResult {
+        var supported = 0
+        var unsupported = 0
+        var hasAnchors = anchorValue(in: node.arguments) != nil
+        var childLayers: [Layer] = []
+
+        for child in node.children {
+            let mapped = map(child)
+            supported += mapped.supported
+            unsupported += mapped.unsupported
+            hasAnchors = hasAnchors || mapped.hasAnchors
+            childLayers.append(contentsOf: mapped.layers)
+        }
+
+        if isIgnoredWidget(node.widget) {
+            return WebLayerResult(layers: childLayers, supported: supported, unsupported: unsupported, hasAnchors: hasAnchors)
+        }
+
+        var layer = baseLayer(for: node, childLayers: childLayers)
+        if layer.isLocked { unsupported += 1 } else { supported += 1 }
+        applyArguments(node.arguments, to: &layer)
+        layoutChildren(of: &layer)
+        return WebLayerResult(layers: [layer], supported: supported, unsupported: unsupported, hasAnchors: hasAnchors)
+    }
+
+    private func baseLayer(for node: FlutterNode, childLayers: [Layer]) -> Layer {
+        let text = textValue(for: node) ?? childLayers.first(where: { $0.text != nil })?.text
+        let kind: LayerKind
+        let fallbackName: String
+        var locked = false
+        var notes: String?
+
+        switch node.widget {
+        case "Scaffold", "SafeArea", "Container", "SizedBox", "Padding", "Center", "Align",
+             "Column", "Row", "Stack", "Card", "Expanded", "Flexible", "ListView", "GridView",
+             "SingleChildScrollView":
+            kind = .container
+            fallbackName = node.widget
+        case "Text":
+            kind = .label
+            fallbackName = text ?? "Text"
+        case "ElevatedButton", "TextButton", "OutlinedButton", "FilledButton",
+             "FloatingActionButton", "IconButton", "InkWell", "GestureDetector":
+            kind = .button
+            fallbackName = text ?? node.widget
+        case "Slider":
+            kind = .slider
+            fallbackName = "Slider"
+        case "Switch", "Checkbox":
+            kind = .toggle
+            fallbackName = node.widget
+        case "Image", "Icon", "CircleAvatar":
+            kind = .image
+            fallbackName = node.widget
+        case "TextField", "TextFormField":
+            kind = .text
+            fallbackName = text ?? node.widget
+        case "DropdownButton":
+            kind = .control
+            fallbackName = node.widget
+        default:
+            kind = .custom(typeName: node.widget)
+            fallbackName = node.widget
+            locked = true
+            notes = "\(node.widget) is preserved as a locked Flutter placeholder because custom widget behaviour cannot be safely edited yet."
+        }
+
+        let anchor = anchorValue(in: node.arguments)
+        return Layer(
+            name: anchor ?? fallbackName,
+            kind: kind,
+            frame: VRect(origin: .zero, size: defaultSize(for: kind, childCount: childLayers.count)),
+            text: textForLayer(kind: kind, fallback: text),
+            isLocked: locked,
+            binding: anchor.map { CodeBinding(filePath: filePath, anchorID: $0) },
+            notes: notes,
+            tags: ["import:flutter", "widget:\(node.widget)"],
+            children: childLayers)
+    }
+
+    private func applyArguments(_ arguments: String, to layer: inout Layer) {
+        if let width = numericArgument("width", in: arguments) { layer.frame.size.width = width }
+        if let height = numericArgument("height", in: arguments) { layer.frame.size.height = height }
+        if let fontSize = fontSizeArgument(in: arguments) { layer.style.fontSize = fontSize }
+        if let opacity = numericArgument("opacity", in: arguments) {
+            layer.style.opacity = max(0, min(1, opacity))
+        }
+    }
+
+    private func layoutChildren(of layer: inout Layer) {
+        guard !layer.children.isEmpty else { return }
+        var y: Double = 16
+        var maxWidth: Double = layer.frame.width
+        for index in layer.children.indices {
+            if layer.children[index].frame.origin == .zero {
+                layer.children[index].frame.origin = VPoint(x: 16, y: y)
+            }
+            layoutChildren(of: &layer.children[index])
+            y = max(y, layer.children[index].frame.maxY + 12)
+            maxWidth = max(maxWidth, layer.children[index].frame.maxX + 16)
+        }
+        layer.frame.size.width = max(layer.frame.width, maxWidth)
+        layer.frame.size.height = max(layer.frame.height, y + 4)
+    }
+
+    private func ensureRootFrame(_ layer: inout Layer) {
+        if layer.frame.origin == .zero {
+            layer.frame.origin = VPoint(x: 24, y: 24)
+        }
+        layoutChildren(of: &layer)
+    }
+
+    private func isIgnoredWidget(_ widget: String) -> Bool {
+        ["MaterialApp", "CupertinoApp", "Theme", "Builder"].contains(widget)
+    }
+
+    private func textValue(for node: FlutterNode) -> String? {
+        if node.widget == "Text", let text = firstStringLiteral(in: node.arguments) {
+            return text
+        }
+        if ["TextField", "TextFormField"].contains(node.widget),
+           let decoration = directArgument("decoration", in: node.arguments),
+           let hint = firstMatch(in: decoration, pattern: #"hintText\s*:\s*['"]([^'"]+)['"]"#) {
+            return hint
+        }
+        return nil
+    }
+
+    private func textForLayer(kind: LayerKind, fallback: String?) -> String? {
+        switch kind {
+        case .button, .label, .text, .toggle, .control:
+            return fallback
+        default:
+            return nil
+        }
+    }
+
+    private func anchorValue(in arguments: String) -> String? {
+        guard let key = directArgument("key", in: arguments) else { return nil }
+        return firstMatch(
+            in: key,
+            pattern: #"key\s*:\s*(?:const\s+)?(?:ValueKey|ObjectKey|Key)(?:<[^>]+>)?\s*\(\s*['"]([^'"]+)['"]"#
+        )
+        ?? firstMatch(
+            in: key,
+            pattern: #"^(?:const\s+)?(?:ValueKey|ObjectKey|Key)(?:<[^>]+>)?\s*\(\s*['"]([^'"]+)['"]"#
+        )
+    }
+
+    private func numericArgument(_ name: String, in arguments: String) -> Double? {
+        directArgument(name, in: arguments).flatMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    private func fontSizeArgument(in arguments: String) -> Double? {
+        if let direct = numericArgument("fontSize", in: arguments) { return direct }
+        guard let style = directArgument("style", in: arguments),
+              let value = firstMatch(in: style, pattern: #"\bfontSize\s*:\s*([0-9]+(?:\.[0-9]+)?)"#) else {
+            return nil
+        }
+        return Double(value)
+    }
+
+    private func directArgument(_ name: String, in arguments: String) -> String? {
+        for part in topLevelArguments(arguments) {
+            let pieces = part.split(separator: ":", maxSplits: 1).map {
+                String($0).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard pieces.count == 2, pieces[0] == name else { continue }
+            return pieces[1]
+        }
+        return nil
+    }
+
+    private func topLevelArguments(_ arguments: String) -> [String] {
+        var parts: [String] = []
+        var start = arguments.startIndex
+        var index = arguments.startIndex
+        var parenDepth = 0
+        var bracketDepth = 0
+        var braceDepth = 0
+        var quote: Character?
+        var escaped = false
+
+        while index < arguments.endIndex {
+            let character = arguments[index]
+            if let currentQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == currentQuote {
+                    quote = nil
+                }
+            } else if character == "\"" || character == "'" {
+                quote = character
+            } else if character == "(" {
+                parenDepth += 1
+            } else if character == ")" {
+                parenDepth = max(0, parenDepth - 1)
+            } else if character == "[" {
+                bracketDepth += 1
+            } else if character == "]" {
+                bracketDepth = max(0, bracketDepth - 1)
+            } else if character == "{" {
+                braceDepth += 1
+            } else if character == "}" {
+                braceDepth = max(0, braceDepth - 1)
+            } else if character == ",", parenDepth == 0, bracketDepth == 0, braceDepth == 0 {
+                parts.append(String(arguments[start..<index]).trimmingCharacters(in: .whitespacesAndNewlines))
+                start = arguments.index(after: index)
+            }
+            index = arguments.index(after: index)
+        }
+
+        let tail = String(arguments[start..<arguments.endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty { parts.append(tail) }
+        return parts
+    }
+
+    private func firstStringLiteral(in arguments: String) -> String? {
+        firstMatch(in: arguments, pattern: #"['"]([^'"]+)['"]"#)
+    }
+
+    private func firstMatch(in source: String, pattern: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let ns = source as NSString
+        let range = NSRange(location: 0, length: ns.length)
+        guard let match = regex.firstMatch(in: source, options: [], range: range),
+              match.numberOfRanges > 1 else { return nil }
+        return ns.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func defaultSize(for kind: LayerKind, childCount: Int) -> VSize {
+        switch kind {
+        case .container, .panel, .group, .background:
+            return VSize(width: 320, height: max(120, Double(childCount) * 56 + 32))
+        case .button:
+            return VSize(width: 140, height: 44)
+        case .label:
+            return VSize(width: 180, height: 28)
+        case .text:
+            return VSize(width: 180, height: 36)
+        case .image:
+            return VSize(width: 160, height: 100)
+        case .slider:
+            return VSize(width: 180, height: 32)
+        case .toggle:
+            return VSize(width: 140, height: 32)
+        case .control, .custom:
+            return VSize(width: 180, height: 44)
+        default:
+            return VSize(width: 120, height: 80)
+        }
+    }
+}
+
 private struct WebNode {
     var tag: String
     var attributes: [String: String]
     var children: [WebNode] = []
     var textFragments: [String] = []
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
 
 private struct WebDOMParser {
