@@ -187,6 +187,51 @@ public enum BehaviourViewModelGenerator {
             lines.append("        // TODO: connect \(binding.layerName) to app behaviour.")
             lines.append("    }")
         }
+        if !plan.bindings.isEmpty {
+            lines.append("")
+            lines.append("    struct BindingDescriptor: Identifiable, Hashable {")
+            lines.append("        let id: String")
+            lines.append("        let layerID: String")
+            lines.append("        let anchorID: String?")
+            lines.append("        let layerName: String")
+            lines.append("        let kind: String")
+            lines.append("        let valueType: String")
+            lines.append("        let parameterID: String")
+            lines.append("        let propertyName: String?")
+            lines.append("        let actionName: String?")
+            lines.append("        let midiCC: Int?")
+            lines.append("        let auParameterID: String?")
+            lines.append("        let automationEnabled: Bool")
+            lines.append("        let minValue: Double")
+            lines.append("        let maxValue: Double")
+            lines.append("        let defaultValue: Double")
+            lines.append("        let unit: String")
+            lines.append("    }")
+            lines.append("")
+            lines.append("    let bindingDescriptors: [BindingDescriptor] = [")
+            for binding in plan.bindings {
+                lines.append("        \(descriptorLiteral(binding)),")
+            }
+            lines.append("    ]")
+            lines.append("")
+            lines.append("    var automationParameterIDs: [String] {")
+            lines.append("        bindingDescriptors.filter(\\.automationEnabled).map(\\.parameterID)")
+            lines.append("    }")
+            lines.append("")
+            lines.append("    func binding(forParameterID parameterID: String) -> BindingDescriptor? {")
+            lines.append("        bindingDescriptors.first { $0.parameterID == parameterID }")
+            lines.append("    }")
+            lines.append("")
+            lines.append("    func binding(forMIDI cc: Int) -> BindingDescriptor? {")
+            lines.append("        bindingDescriptors.first { $0.midiCC == cc }")
+            lines.append("    }")
+            lines.append("")
+            lines.append("    func binding(forAUParameterID auParameterID: String) -> BindingDescriptor? {")
+            lines.append("        bindingDescriptors.first { $0.auParameterID == auParameterID }")
+            lines.append("    }")
+            emitSetters(plan: plan, into: &lines)
+            emitActionDispatcher(plan: plan, into: &lines)
+        }
         if !plan.midiBindings.isEmpty {
             lines.append("")
             lines.append("    let midiCCMap: [String: Int] = [")
@@ -221,6 +266,91 @@ public enum BehaviourViewModelGenerator {
         case .double: return format(binding.defaultValue)
         case .void: return "()"
         }
+    }
+
+    private static func descriptorLiteral(_ binding: BehaviourBinding) -> String {
+        [
+            "BindingDescriptor(id: \(swiftString(binding.layerID.uuidString))",
+            "layerID: \(swiftString(binding.layerID.uuidString))",
+            "anchorID: \(optionalString(binding.sourceAnchorID))",
+            "layerName: \(swiftString(binding.layerName))",
+            "kind: \(swiftString(binding.kind.rawValue))",
+            "valueType: \(swiftString(binding.valueType.rawValue))",
+            "parameterID: \(swiftString(binding.parameterID))",
+            "propertyName: \(optionalString(binding.propertyName))",
+            "actionName: \(optionalString(binding.actionName))",
+            "midiCC: \(binding.midiCC.map(String.init) ?? "nil")",
+            "auParameterID: \(optionalString(binding.auParameterID))",
+            "automationEnabled: \(binding.automationEnabled ? "true" : "false")",
+            "minValue: \(format(binding.minValue))",
+            "maxValue: \(format(binding.maxValue))",
+            "defaultValue: \(format(binding.defaultValue))",
+            "unit: \(swiftString(binding.unit.rawValue)))"
+        ].joined(separator: ", ")
+    }
+
+    private static func emitSetters(plan: BehaviourViewModelPlan, into lines: inout [String]) {
+        let doubleBindings = plan.stateBindings.filter { $0.valueType == .double }
+        let boolBindings = plan.stateBindings.filter { $0.valueType == .bool }
+        guard !doubleBindings.isEmpty || !boolBindings.isEmpty else { return }
+
+        if !doubleBindings.isEmpty {
+            lines.append("")
+            lines.append("    func setDouble(_ propertyName: String, value: Double) {")
+            lines.append("        switch propertyName {")
+            for binding in doubleBindings {
+                guard let property = binding.propertyName else { continue }
+                lines.append("        case \(swiftString(property)):")
+                lines.append("            \(property) = min(\(format(binding.maxValue)), max(\(format(binding.minValue)), value))")
+            }
+            lines.append("        default:")
+            lines.append("            break")
+            lines.append("        }")
+            lines.append("    }")
+        }
+
+        if !boolBindings.isEmpty {
+            lines.append("")
+            lines.append("    func setBool(_ propertyName: String, value: Bool) {")
+            lines.append("        switch propertyName {")
+            for binding in boolBindings {
+                guard let property = binding.propertyName else { continue }
+                lines.append("        case \(swiftString(property)):")
+                lines.append("            \(property) = value")
+            }
+            lines.append("        default:")
+            lines.append("            break")
+            lines.append("        }")
+            lines.append("    }")
+        }
+    }
+
+    private static func emitActionDispatcher(plan: BehaviourViewModelPlan, into lines: inout [String]) {
+        guard !plan.actionBindings.isEmpty else { return }
+        lines.append("")
+        lines.append("    func perform(action actionName: String) {")
+        lines.append("        switch actionName {")
+        for binding in plan.actionBindings {
+            guard let action = binding.actionName else { continue }
+            lines.append("        case \(swiftString(action)):")
+            lines.append("            \(action)()")
+        }
+        lines.append("        default:")
+        lines.append("            break")
+        lines.append("        }")
+        lines.append("    }")
+    }
+
+    private static func optionalString(_ value: String?) -> String {
+        value.map(swiftString) ?? "nil"
+    }
+
+    private static func swiftString(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        return "\"\(escaped)\""
     }
 }
 

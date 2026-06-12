@@ -2094,6 +2094,11 @@ func runChecks() async {
                 modelSource.contains("final class SynthPanelViewModel: ObservableObject") &&
                 modelSource.contains("@Published var synthCutoff: Double = 1000") &&
                 modelSource.contains("func triggerAction()") &&
+                modelSource.contains("struct BindingDescriptor: Identifiable, Hashable") &&
+                modelSource.contains("func setDouble(_ propertyName: String, value: Double)") &&
+                modelSource.contains("func binding(forMIDI cc: Int) -> BindingDescriptor?") &&
+                modelSource.contains("func perform(action actionName: String)") &&
+                modelSource.contains("automationParameterIDs") &&
                 modelSource.contains("\"cutoff\": 74"))
 
         var exportDoc = Document(name: "Binding Exports", roots: [knobLayer, button, toggle, meter])
