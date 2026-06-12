@@ -303,6 +303,11 @@ public enum ControlBehaviourDiagnostics {
         case meterMustBeReadOnly
         case invalidRotation
         case unboundAutomation
+        case missingBinding
+        case geometryMismatch
+        case unsupportedBehaviour
+        case writeableMeter
+        case interactionBlocked
     }
 
     public struct Issue: Identifiable, Hashable, Sendable {
