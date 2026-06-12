@@ -2480,6 +2480,28 @@ func runChecks() async {
         c.check("p39 detects React", reactSummary.framework == .react)
         c.check("p39 React is foundation-only", reactSummary.implementationState == .foundationOnly && reactSummary.rating == .yellow)
 
+        let reactScreenRoot = try makeProject("react-screen")
+        defer { try? fm.removeItem(at: reactScreenRoot) }
+        try #"{"dependencies":{"react":"latest"}}"#.data(using: .utf8)!.write(to: reactScreenRoot.appendingPathComponent("package.json"))
+        try """
+        export default function ControlPanel() {
+          return (
+            <main id="panel" style={{ width: 360, height: 180 }}>
+              <button data-vua-anchor="playButton">Play</button>
+              <input id="level" type="range" />
+            </main>
+          )
+        }
+        """.data(using: .utf8)!.write(to: reactScreenRoot.appendingPathComponent("ControlPanel.jsx"))
+        let reactScreenSummary = detector.detect(root: reactScreenRoot)
+        let reactImported = reactScreenSummary.candidates.first.flatMap { coordinator.importCandidate($0) }
+        let reactLayers = reactImported?.view.roots.flatMap { $0.flattened() } ?? []
+        c.check("p56 React JSX static import", reactScreenSummary.framework == .react &&
+                reactScreenSummary.implementationState == .implemented &&
+                reactScreenSummary.rating == .yellow &&
+                reactLayers.contains { $0.binding?.anchorID == "playButton" && $0.kind == .button } &&
+                reactLayers.contains { $0.binding?.anchorID == "level" && $0.kind == .slider })
+
         let reactNativeRoot = try makeProject("react-native")
         defer { try? fm.removeItem(at: reactNativeRoot) }
         try #"{"dependencies":{"react-native":"latest","react":"latest"}}"#.data(using: .utf8)!.write(to: reactNativeRoot.appendingPathComponent("package.json"))
@@ -2496,10 +2518,30 @@ func runChecks() async {
 
         let htmlRoot = try makeProject("html")
         defer { try? fm.removeItem(at: htmlRoot) }
-        try "<html><body><button>Start</button></body></html>".data(using: .utf8)!.write(to: htmlRoot.appendingPathComponent("index.html"))
+        try """
+        <html>
+          <head><title>Marketing Home</title></head>
+          <body>
+            <main id="home" style="width: 480px; height: 260px; background-color: #101820;">
+              <h1 data-testid="heroTitle" style="font-size: 28px; color: #ffffff;">Launch faster</h1>
+              <button id="startButton" style="width: 140px; height: 44px; border-radius: 8px;">Start</button>
+              <input id="emailField" placeholder="Email" />
+              <canvas id="chart"></canvas>
+            </main>
+          </body>
+        </html>
+        """.data(using: .utf8)!.write(to: htmlRoot.appendingPathComponent("index.html"))
         let htmlSummary = detector.detect(root: htmlRoot)
+        let htmlImported = htmlSummary.candidates.first.flatMap { coordinator.importCandidate($0) }
+        let htmlLayers = htmlImported?.view.roots.flatMap { $0.flattened() } ?? []
         c.check("p39 detects HTML CSS", htmlSummary.framework == .htmlCSS)
-        c.check("p39 HTML CSS is foundation-only", htmlSummary.implementationState == .foundationOnly && htmlSummary.rating == .yellow)
+        c.check("p56 HTML CSS imports static DOM layers",
+                htmlSummary.implementationState == .implemented &&
+                htmlSummary.rating == .yellow &&
+                htmlSummary.screenCount == 1 &&
+                htmlLayers.contains { $0.binding?.anchorID == "home" && $0.kind.isGroupLike } &&
+                htmlLayers.contains { $0.binding?.anchorID == "startButton" && $0.kind == .button } &&
+                htmlLayers.contains { $0.binding?.anchorID == "chart" && $0.isLocked })
 
         let flutterRoot = try makeProject("flutter")
         defer { try? fm.removeItem(at: flutterRoot) }

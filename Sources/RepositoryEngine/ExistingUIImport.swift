@@ -24,6 +24,21 @@ public enum ExistingUIImport {
         public var hasAnchors: Bool
         public var isPreviewOnly: Bool
         public var warnings: [String]
+
+        public init(viewName: String, filePath: String, repoRoot: String? = nil,
+                    confidence: Double, supportedElementCount: Int,
+                    unsupportedElementCount: Int, hasAnchors: Bool,
+                    isPreviewOnly: Bool, warnings: [String]) {
+            self.viewName = viewName
+            self.filePath = filePath
+            self.repoRoot = repoRoot
+            self.confidence = confidence
+            self.supportedElementCount = supportedElementCount
+            self.unsupportedElementCount = unsupportedElementCount
+            self.hasAnchors = hasAnchors
+            self.isPreviewOnly = isPreviewOnly
+            self.warnings = warnings
+        }
     }
 
     /// Set of SwiftUI primitives the parser reconstructs on this first pass.
@@ -130,6 +145,13 @@ public enum ExistingUIImport {
         public var sourceHash: String
         public var hasAnchors: Bool
         public var anchorsInjected: Bool = false
+
+        public init(view: ParsedView, sourceHash: String, hasAnchors: Bool, anchorsInjected: Bool = false) {
+            self.view = view
+            self.sourceHash = sourceHash
+            self.hasAnchors = hasAnchors
+            self.anchorsInjected = anchorsInjected
+        }
     }
 
     /// Parses the candidate's view into editable layers and computes a content

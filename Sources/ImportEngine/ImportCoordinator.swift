@@ -15,4 +15,9 @@ public struct ImportCoordinator: Sendable {
     public func swiftUICandidates(root: URL) -> [ExistingUIImport.Candidate] {
         ExistingUIImport.scanRepository(root)
     }
+
+    public func importCandidate(_ candidate: ExistingUIImport.Candidate) -> ExistingUIImport.Imported? {
+        ExistingUIImport.importCandidateEnsuringAnchors(candidate)
+            ?? WebUIImport.importCandidate(candidate)
+    }
 }

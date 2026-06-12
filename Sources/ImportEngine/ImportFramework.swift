@@ -26,7 +26,14 @@ public enum ImportFramework: String, Codable, Hashable, Sendable, CaseIterable {
         }
     }
 
-    public var isImportImplemented: Bool { self == .swiftUI }
+    public var isImportImplemented: Bool {
+        switch self {
+        case .swiftUI, .react, .electron, .htmlCSS:
+            return true
+        case .uiKit, .appKit, .reactNative, .flutter, .unknown:
+            return false
+        }
+    }
 }
 
 public enum ImportCompatibilityRating: String, Codable, Hashable, Sendable {
