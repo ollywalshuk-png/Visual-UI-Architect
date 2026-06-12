@@ -136,8 +136,13 @@ public struct SwiftUIGenerator: CodeGenerator {
         // Component instance: collapse to a single component-view call (the
         // child clones exist for the editor; in code we reuse the master).
         if let cid = layer.componentID, let component = document.component(id: cid) {
+            let overrides = layer.componentOverrides.isEmpty
+                ? nil
+                : "overrides: [\(layer.componentOverrides.map { "\(quoted($0.property)): \(quoted($0.valueDescription))" }.joined(separator: ", "))]"
             if let variant = component.variant(id: layer.componentVariantID) {
-                b.line("\(component.generatedTypeName)(variant: \(quoted(variant.name)))")
+                b.line("\(component.generatedTypeName)(variant: \(quoted(variant.name))\(overrides.map { ", \($0)" } ?? ""))")
+            } else if let overrides {
+                b.line("\(component.generatedTypeName)(\(overrides))")
             } else {
                 b.line("\(component.generatedTypeName)()")
             }
@@ -261,6 +266,7 @@ public struct SwiftUIGenerator: CodeGenerator {
         b.line("// MARK: Component — \(component.name)")
         b.block("struct \(component.generatedTypeName): View {") { b in
             b.line("var variant: String = \"Base\"")
+            b.line("var overrides: [String: String] = [:]")
             b.block("var body: some View {") { b in
                 if component.variants.isEmpty {
                     emitComponentMaster(component.master, into: &b, document: document)

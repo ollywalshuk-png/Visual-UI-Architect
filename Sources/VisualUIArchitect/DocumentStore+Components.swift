@@ -139,12 +139,10 @@ extension DocumentStore {
     func createStandardVariants(for componentID: UUID) {
         mutate { doc in
             guard let index = doc.components.firstIndex(where: { $0.id == componentID }) else { return }
-            let names = ["Primary", "Secondary", "Danger", "Success"]
+            let variants = ComponentEngine.standardButtonVariants(for: doc.components[index])
             let existing = Set(doc.components[index].variants.map { $0.name })
-            for name in names where !existing.contains(name) {
-                var master = LayerTree.cloneWithNewIDs(doc.components[index].master)
-                master.name = "\(doc.components[index].name) \(name)"
-                doc.components[index].variants.append(ComponentVariant(name: name, master: master))
+            for variant in variants where !existing.contains(variant.name) {
+                doc.components[index].variants.append(variant)
             }
         }
         repositoryStatus = "Created standard component variants."
